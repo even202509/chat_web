@@ -1,4 +1,5 @@
 import os
+import re
 
 from flask import (
     Flask,
@@ -158,6 +159,21 @@ def is_group_creator(group_id, user_id):
     return bool(row)
 
 
+def get_group_role(group_id, user_id):
+    """获取用户在群组中的角色: 'owner', 'admin', 'member' 或 None"""
+    row = db.session.execute(text("""
+        SELECT role FROM group_members
+        WHERE chat_id = 'group:' || :gid AND user_id = :uid
+    """), {"gid": group_id, "uid": user_id}).fetchone()
+    return row[0] if row else None
+
+
+def is_group_admin(group_id, user_id):
+    """检查用户是否为群组管理员(owner 或 admin)"""
+    role = get_group_role(group_id, user_id)
+    return role in ('owner', 'admin')
+
+
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'default-secret-key')
 socketio = SocketIO(app, manage_session=False)
 online_users = {}
@@ -255,6 +271,14 @@ def emit_group_count(group_id):
     socketio.emit('group_info_updated', {"id": group_id, "members": count}, to=str(group_id))
 
 
+def get_group_member_ids(group_id):
+    """返回群组所有成员的 user_id 列表"""
+    rows = db.session.execute(text(
+        "SELECT user_id FROM group_members WHERE chat_id = 'group:' || :gid"
+    ), {"gid": group_id}).fetchall()
+    return [r[0] for r in rows]
+
+
 def get_group_name(group_id):
     row = db.session.execute(text(
         "SELECT group_name FROM groups WHERE id = :gid"
@@ -282,7 +306,7 @@ def api_group_members(group_id):
         return {"error": "Not a member of this group"}, 403
 
     rows = db.session.execute(text("""
-        SELECT u.id, u.username, gm.joined_at,
+        SELECT u.id, u.username, gm.joined_at, gm.role,
                CASE WHEN gm.role = 'owner' THEN TRUE ELSE FALSE END AS is_creator
         FROM group_members gm
         JOIN users u ON gm.user_id = u.id
@@ -294,7 +318,8 @@ def api_group_members(group_id):
         "id": row[0],
         "username": row[1],
         "joined_at": row[2].isoformat() if row[2] else None,
-        "is_creator": row[3]
+        "role": row[3],
+        "is_creator": row[4]
     } for row in rows]
     return {"members": members, "group_id": group_id}
 
@@ -316,9 +341,12 @@ def api_private_messages(target_id):
     chat_id = f"{uid1}:{uid2}"
     messages = db.session.execute(text(
         """
-        SELECT m.id, m.sender_id, m.content, m.created_at, u.username
+        SELECT m.id, m.sender_id, m.content, m.created_at, u.username,
+               m.reply_to_id, ru.username AS reply_username, rm.content AS reply_content
         FROM messages m
         JOIN users u ON m.sender_id = u.id
+        LEFT JOIN messages rm ON m.reply_to_id = rm.id
+        LEFT JOIN users ru ON rm.sender_id = ru.id
         WHERE m.chat_type = 'private'
           AND m.chat_id = :chat_id
           AND m.deleted_at IS NULL
@@ -331,7 +359,11 @@ def api_private_messages(target_id):
         ORDER BY m.created_at
         """
     ), {"chat_id": chat_id, "uid": user_id}).fetchall()
-    return {"messages": [{"id": m[0], "sender_id": m[1], "content": m[2], "created_at": m[3].isoformat() if m[3] else None, "sender_username": m[4]} for m in messages]}
+    return {"messages": [{
+        "id": m[0], "sender_id": m[1], "content": m[2],
+        "created_at": m[3].isoformat() if m[3] else None, "sender_username": m[4],
+        "reply_to": {"id": m[5], "username": m[6], "content": m[7]} if m[5] else None
+    } for m in messages]}
 
 @app.route('/api/group_messages/<int:group_id>')
 @login_required
@@ -343,9 +375,12 @@ def api_group_messages(group_id):
     chat_id = f"group:{group_id}"
     messages = db.session.execute(text(
         """
-        SELECT m.id, m.sender_id, m.content, m.created_at, u.username
+        SELECT m.id, m.sender_id, m.content, m.created_at, u.username,
+               m.reply_to_id, ru.username AS reply_username, rm.content AS reply_content
         FROM messages m
         JOIN users u ON m.sender_id = u.id
+        LEFT JOIN messages rm ON m.reply_to_id = rm.id
+        LEFT JOIN users ru ON rm.sender_id = ru.id
         WHERE m.chat_type = 'group'
           AND m.chat_id = :chat_id
           AND m.deleted_at IS NULL
@@ -358,7 +393,11 @@ def api_group_messages(group_id):
         ORDER BY m.created_at
         """
     ), {"chat_id": chat_id, "uid": user_id}).fetchall()
-    return {"messages": [{"id": m[0], "sender_id": m[1], "content": m[2], "created_at": m[3].isoformat() if m[3] else None, "sender_username": m[4]} for m in messages]}
+    return {"messages": [{
+        "id": m[0], "sender_id": m[1], "content": m[2],
+        "created_at": m[3].isoformat() if m[3] else None, "sender_username": m[4],
+        "reply_to": {"id": m[5], "username": m[6], "content": m[7]} if m[5] else None
+    } for m in messages]}
 
 @app.route('/api/unread_counts')
 @login_required
@@ -475,8 +514,8 @@ def handle_invite_to_group(data):
     user_id = int(current_user.id)
     group_id = int(data.get('group_id'))
     target_id = int(data.get('user_id'))
-    if not is_group_creator(group_id, user_id):
-        return {"error": "Only the group creator can invite members"}
+    if not is_group_admin(group_id, user_id):
+        return {"error": "Only group admins can invite members"}
     target = db.session.execute(text("SELECT 1 FROM users WHERE id = :uid"), {"uid": target_id}).fetchone()
     if not target:
         return {"error": "User not found"}
@@ -498,13 +537,20 @@ def handle_remove_from_group(data):
     user_id = int(current_user.id)
     group_id = int(data.get('group_id'))
     target_id = int(data.get('target_id'))
-    # 群主不能被踢，不能自己离开
-    if is_group_creator(group_id, target_id) and target_id != user_id:
-        return {"error": "Cannot remove the group creator"}
-    if is_group_creator(group_id, target_id) and target_id == user_id:
-        return {"error": "Group creator cannot leave; transfer ownership first"}
-    if target_id != user_id and not is_group_creator(group_id, user_id):
-        return {"error": "Only the group creator can remove members"}
+    # 权限检查
+    actor_role = get_group_role(group_id, user_id)
+    target_role = get_group_role(group_id, target_id)
+    # Owner 不可被移除
+    if target_role == 'owner' and target_id != user_id:
+        return {"error": "Cannot remove the group owner"}
+    if target_role == 'owner' and target_id == user_id:
+        return {"error": "Group owner cannot leave; transfer ownership first"}
+    # Admin 只能被 Owner 移除
+    if target_role == 'admin' and actor_role != 'owner':
+        return {"error": "Only the group owner can remove admins"}
+    # 非管理员不能移除他人
+    if target_id != user_id and actor_role not in ('owner', 'admin'):
+        return {"error": "Only group admins can remove members"}
     if not is_group_member(group_id, target_id):
         return {"error": "User is not a member of this group"}
     db.session.execute(text("DELETE FROM group_members WHERE chat_id = 'group:' || :gid AND user_id = :uid"), {"gid": group_id, "uid": target_id})
@@ -581,6 +627,54 @@ def handle_transfer_ownership(data):
     return {"success": True}
 
 
+@socketio.on('promote_to_admin')
+@authenticated_only
+def handle_promote_to_admin(data):
+    user_id = int(current_user.id)
+    group_id = int(data.get('group_id'))
+    target_id = int(data.get('target_id'))
+    if not is_group_creator(group_id, user_id):
+        return {"error": "Only the group owner can promote admins"}
+    if not is_group_member(group_id, target_id):
+        return {"error": "Target user is not a member of this group"}
+    role = get_group_role(group_id, target_id)
+    if role == 'owner':
+        return {"error": "Cannot change owner role"}
+    if role == 'admin':
+        return {"error": "User is already an admin"}
+    db.session.execute(text(
+        "UPDATE group_members SET role = 'admin' WHERE chat_id = 'group:' || :gid AND user_id = :uid"
+    ), {"gid": group_id, "uid": target_id})
+    db.session.commit()
+    gn = get_group_name(group_id)
+    socketio.emit('admin_promoted', {"id": group_id, "name": gn, "user_id": target_id}, to=str(group_id))
+    return {"success": True}
+
+
+@socketio.on('demote_from_admin')
+@authenticated_only
+def handle_demote_from_admin(data):
+    user_id = int(current_user.id)
+    group_id = int(data.get('group_id'))
+    target_id = int(data.get('target_id'))
+    if not is_group_creator(group_id, user_id):
+        return {"error": "Only the group owner can demote admins"}
+    if not is_group_member(group_id, target_id):
+        return {"error": "Target user is not a member of this group"}
+    role = get_group_role(group_id, target_id)
+    if role == 'owner':
+        return {"error": "Cannot change owner role"}
+    if role != 'admin':
+        return {"error": "User is not an admin"}
+    db.session.execute(text(
+        "UPDATE group_members SET role = 'member' WHERE chat_id = 'group:' || :gid AND user_id = :uid"
+    ), {"gid": group_id, "uid": target_id})
+    db.session.commit()
+    gn = get_group_name(group_id)
+    socketio.emit('admin_demoted', {"id": group_id, "name": gn, "user_id": target_id}, to=str(group_id))
+    return {"success": True}
+
+
 @socketio.on('global_message')
 @authenticated_only
 def handle_global_message(data):
@@ -615,16 +709,18 @@ def handle_private_message(data):
     uid1, uid2 = sorted([user['user_id'], target_id])
     chat_id = f"{uid1}:{uid2}"
     # 存储消息到数据库
+    reply_to = data.get('replyTo')
     result = db.session.execute(text(
         """
-        INSERT INTO messages (chat_id, chat_type, sender_id, msg_type, content)
-        VALUES (:chat_id, 'private', :sender_id, 'text', :content)
+        INSERT INTO messages (chat_id, chat_type, sender_id, msg_type, content, reply_to_id)
+        VALUES (:chat_id, 'private', :sender_id, 'text', :content, :reply_to_id)
         RETURNING id, created_at
         """
     ), {
         'chat_id': chat_id,
         'sender_id': user['user_id'],
-        'content': data['text']
+        'content': data['text'],
+        'reply_to_id': reply_to
     })
     row = result.fetchone()
     db.session.commit()
@@ -652,7 +748,8 @@ def handle_private_message(data):
         'to_id': target_id,
         'text': data['text'],
         'msg_type': 'private',
-        'created_at': row[1].isoformat() if row[1] else None
+        'created_at': row[1].isoformat() if row[1] else None,
+        'reply_to': reply_to
     }
     target_sid = user_id_to_sid.get(target_id)
     if target_sid:
@@ -664,22 +761,82 @@ def handle_private_message(data):
 def handle_group_message(data):
     group_id = data.get('groupId')
     chat_id = f"group:{group_id}"
+    reply_to = data.get('replyTo')
     # 存储消息到数据库
     result = db.session.execute(text(
         """
-        INSERT INTO messages (chat_id, chat_type, sender_id, msg_type, content)
-        VALUES (:chat_id, 'group', :sender_id, 'text', :content)
+        INSERT INTO messages (chat_id, chat_type, sender_id, msg_type, content, reply_to_id)
+        VALUES (:chat_id, 'group', :sender_id, 'text', :content, :reply_to_id)
         RETURNING id, created_at
         """
     ), {
         'chat_id': chat_id,
         'sender_id': int(current_user.id),
-        'content': data['text']
+        'content': data['text'],
+        'reply_to_id': reply_to
     })
     row = result.fetchone()
     db.session.commit()
     if not row:
         return
+    message_id = row[0]
+
+    # --- @提及 处理 ---
+    text = data['text']
+    at_pattern = re.findall(r'@(\w+)', text)
+    is_at_all = any(t.lower() in ('all', 'everyone') for t in at_pattern)
+    sender_id = int(current_user.id)
+
+    if is_at_all:
+        # @all: 标记所有群成员为被提及
+        member_ids = get_group_member_ids(group_id)
+        for mid in member_ids:
+            if mid == sender_id:
+                continue
+            db.session.execute(text("""
+                INSERT INTO user_message_status (user_id, message_id, chat_id, chat_type, is_read, mention_type, is_mentioned)
+                VALUES (:uid, :mid, :cid, 'group', FALSE, 'all', TRUE)
+                ON CONFLICT (user_id, message_id) DO UPDATE
+                SET mention_type = 'all', is_mentioned = TRUE
+            """), {"uid": mid, "mid": message_id, "cid": chat_id})
+        db.session.commit()
+        gn = get_group_name(group_id)
+        socketio.emit('mentioned_in_group', {
+            "group_id": group_id, "group_name": gn,
+            "message_id": message_id, "from_id": sender_id,
+            "from_name": current_user.username, "mention_type": "all"
+        }, to=str(group_id))
+    elif at_pattern:
+        # @特定用户: 解析用户名 → user_id
+        placeholders = ','.join(f':u{i}' for i in range(len(at_pattern)))
+        params = {f'u{i}': uname for i, uname in enumerate(at_pattern)}
+        mentioned_rows = db.session.execute(text(
+            f"SELECT id, username FROM users WHERE username IN ({placeholders})"
+        ), params).fetchall()
+        mentioned_map = {r[1]: r[0] for r in mentioned_rows}
+        mentioned_sids = []
+        for uname, uid in mentioned_map.items():
+            if uid == sender_id:
+                continue
+            db.session.execute(text("""
+                INSERT INTO user_message_status (user_id, message_id, chat_id, chat_type, is_read, mention_type, is_mentioned)
+                VALUES (:uid, :mid, :cid, 'group', FALSE, 'someone', TRUE)
+                ON CONFLICT (user_id, message_id) DO UPDATE
+                SET mention_type = 'someone', is_mentioned = TRUE
+            """), {"uid": uid, "mid": message_id, "cid": chat_id})
+            sid = user_id_to_sid.get(uid)
+            if sid:
+                mentioned_sids.append(sid)
+        db.session.commit()
+        gn = get_group_name(group_id)
+        for sid in mentioned_sids:
+            socketio.emit('mentioned_in_group', {
+                "group_id": group_id, "group_name": gn,
+                "message_id": message_id, "from_id": sender_id,
+                "from_name": current_user.username, "mention_type": "someone"
+            }, to=sid)
+    # --- @提及 处理结束 ---
+
     msg = {
         'id': row[0],
         'from': current_user.username,
@@ -687,9 +844,73 @@ def handle_group_message(data):
         'group_id': group_id,
         'text': data['text'],
         'msg_type': 'group',
-        'created_at': row[1].isoformat() if row[1] else None
+        'created_at': row[1].isoformat() if row[1] else None,
+        'reply_to': reply_to
     }
     message_sender(msg, target_type='group', target_id=group_id)
+
+
+@socketio.on('delete_message')
+@authenticated_only
+def handle_delete_message(data):
+    """全局删除消息（群组 admin/owner 可操作）"""
+    user_id = int(current_user.id)
+    message_id = int(data.get('message_id'))
+    # 查询消息所属聊天的信息
+    msg_row = db.session.execute(text(
+        "SELECT id, chat_id, chat_type, sender_id FROM messages WHERE id = :mid AND deleted_at IS NULL"
+    ), {"mid": message_id}).fetchone()
+    if not msg_row:
+        return {"error": "Message not found or already deleted"}
+    chat_id = msg_row[1]
+    chat_type = msg_row[2]
+    if chat_type == 'group':
+        group_id = int(chat_id.split(':', 1)[1])
+        if not is_group_admin(group_id, user_id):
+            return {"error": "Only group admins can delete messages"}
+        db.session.execute(text(
+            "UPDATE messages SET deleted_at = NOW(), deleted_by = :uid WHERE id = :mid"
+        ), {"uid": user_id, "mid": message_id})
+        db.session.commit()
+        socketio.emit('message_deleted', {"message_id": message_id, "chat_id": chat_id}, to=str(group_id))
+        return {"success": True}
+    elif chat_type == 'private':
+        # 私聊：仅发送者可撤回
+        if msg_row[3] != user_id:
+            return {"error": "Only the message sender can delete it"}
+        db.session.execute(text(
+            "UPDATE messages SET deleted_at = NOW(), deleted_by = :uid WHERE id = :mid"
+        ), {"uid": user_id, "mid": message_id})
+        db.session.commit()
+        # 通知对方
+        uid1, uid2 = chat_id.split(':')
+        other_id = int(uid2) if int(uid1) == user_id else int(uid1)
+        other_sid = user_id_to_sid.get(other_id)
+        if other_sid:
+            socketio.emit('message_deleted', {"message_id": message_id, "chat_id": chat_id}, to=other_sid)
+        return {"success": True}
+    return {"error": "Unknown chat type"}
+
+
+@socketio.on('delete_message_for_me')
+@authenticated_only
+def handle_delete_message_for_me(data):
+    """用户自行删除消息（仅自己不可见）"""
+    user_id = int(current_user.id)
+    message_id = int(data.get('message_id'))
+    msg_row = db.session.execute(text(
+        "SELECT id, chat_id, chat_type FROM messages WHERE id = :mid AND deleted_at IS NULL"
+    ), {"mid": message_id}).fetchone()
+    if not msg_row:
+        return {"error": "Message not found"}
+    db.session.execute(text("""
+        INSERT INTO user_message_status (user_id, message_id, chat_id, chat_type, is_deleted, deleted_at)
+        VALUES (:uid, :mid, :cid, :ct, TRUE, NOW())
+        ON CONFLICT (user_id, message_id) DO UPDATE
+        SET is_deleted = TRUE, deleted_at = NOW()
+    """), {"uid": user_id, "mid": message_id, "cid": msg_row[1], "ct": msg_row[2]})
+    db.session.commit()
+    return {"success": True, "message_id": message_id}
 
 
 @socketio.on('friend_add')
