@@ -286,6 +286,28 @@ def get_group_name(group_id):
     return row[0] if row else "Unknown"
 
 
+def send_system_message(group_id, content):
+    """插入系统消息并广播到群组房间"""
+    chat_id = f"group:{group_id}"
+    result = db.session.execute(text("""
+        INSERT INTO messages (chat_id, chat_type, sender_id, msg_type, content)
+        VALUES (:chat_id, 'group', 0, 'system', :content)
+        RETURNING id, created_at
+    """), {"chat_id": chat_id, "content": content})
+    row = result.fetchone()
+    db.session.commit()
+    if row:
+        msg = {
+            "id": row[0],
+            "sender_id": 0,
+            "content": content,
+            "msg_type": "system",
+            "group_id": group_id,
+            "created_at": row[1].isoformat() if row[1] else None
+        }
+        socketio.emit('group_message', msg, to=str(group_id))
+
+
 # ==================== 群组 API 路由 ====================
 
 @app.route('/api/groups')
@@ -344,7 +366,7 @@ def api_private_messages(target_id):
         SELECT m.id, m.sender_id, m.content, m.created_at, u.username,
                m.reply_to_id, ru.username AS reply_username, rm.content AS reply_content
         FROM messages m
-        JOIN users u ON m.sender_id = u.id
+        LEFT JOIN users u ON m.sender_id = u.id
         LEFT JOIN messages rm ON m.reply_to_id = rm.id
         LEFT JOIN users ru ON rm.sender_id = ru.id
         WHERE m.chat_type = 'private'
@@ -378,7 +400,7 @@ def api_group_messages(group_id):
         SELECT m.id, m.sender_id, m.content, m.created_at, u.username,
                m.reply_to_id, ru.username AS reply_username, rm.content AS reply_content
         FROM messages m
-        JOIN users u ON m.sender_id = u.id
+        LEFT JOIN users u ON m.sender_id = u.id
         LEFT JOIN messages rm ON m.reply_to_id = rm.id
         LEFT JOIN users ru ON rm.sender_id = ru.id
         WHERE m.chat_type = 'group'
@@ -405,21 +427,35 @@ def api_unread_counts():
     user_id = get_current_user_id()
     rows = db.session.execute(text(
         """
+        -- 私聊未读：提取 chat_id 中对方 user_id 作为 key
         SELECT 
             CASE 
                 WHEN SPLIT_PART(ums.chat_id, ':', 1)::int = :uid 
-                THEN SPLIT_PART(ums.chat_id, ':', 2)::int 
-                ELSE SPLIT_PART(ums.chat_id, ':', 1)::int 
-            END AS other_user_id,
+                THEN SPLIT_PART(ums.chat_id, ':', 2)::int::text
+                ELSE SPLIT_PART(ums.chat_id, ':', 1)::int::text
+            END AS chat_key,
             COUNT(*) as unread_count
         FROM user_message_status ums
         WHERE ums.user_id = :uid
           AND ums.is_read = FALSE
           AND ums.chat_type = 'private'
         GROUP BY ums.chat_id
+        
+        UNION ALL
+        
+        -- 群聊未读：key 格式为 "g:{group_id}"
+        SELECT 
+            'g:' || SPLIT_PART(ums.chat_id, ':', 2) AS chat_key,
+            COUNT(*) as unread_count
+        FROM user_message_status ums
+        WHERE ums.user_id = :uid
+          AND ums.is_read = FALSE
+          AND ums.chat_type = 'group'
+          AND ums.mention_type IS NULL
+        GROUP BY ums.chat_id
         """
     ), {"uid": user_id}).fetchall()
-    return {"unread": {str(row[0]): row[1] for row in rows}}
+    return {"unread": {row[0]: row[1] for row in rows}}
 
 
 
@@ -523,6 +559,9 @@ def handle_invite_to_group(data):
         return {"error": "User is already a member"}
     db.session.execute(text("INSERT INTO group_members (chat_id, user_id, role) VALUES ('group:' || :gid, :uid, 'member')"), {"gid": group_id, "uid": target_id})
     db.session.commit()
+    # 系统消息
+    target_name = get_username_by_id(target_id) or str(target_id)
+    send_system_message(group_id, f"👤 {current_user.username} 邀请了 {target_name} 加入群组")
     target_sid = user_id_to_sid.get(target_id)
     if target_sid:
         gi = db.session.execute(text("SELECT g.group_name, g.creator_id, COUNT(gm.user_id)::int AS mc FROM groups g JOIN group_members gm ON gm.chat_id = 'group:' || g.id WHERE g.id = :gid GROUP BY g.id"), {"gid": group_id}).fetchone()
@@ -555,6 +594,12 @@ def handle_remove_from_group(data):
         return {"error": "User is not a member of this group"}
     db.session.execute(text("DELETE FROM group_members WHERE chat_id = 'group:' || :gid AND user_id = :uid"), {"gid": group_id, "uid": target_id})
     db.session.commit()
+    # 系统消息
+    target_name = get_username_by_id(target_id) or str(target_id)
+    if target_id == user_id:
+        send_system_message(group_id, f"👤 {target_name} 离开了群组")
+    else:
+        send_system_message(group_id, f"👤 {target_name} 被 {current_user.username} 移出了群组")
     emit_group_count(group_id)  # 广播最新成员数
     if target_id != user_id:
         ts = user_id_to_sid.get(target_id)
@@ -622,6 +667,8 @@ def handle_transfer_ownership(data):
     db.session.execute(text("UPDATE group_members SET role = 'member' WHERE chat_id = 'group:' || :gid AND user_id = :uid AND role = 'owner'"), {"gid": group_id, "uid": user_id})
     db.session.execute(text("UPDATE group_members SET role = 'owner' WHERE chat_id = 'group:' || :gid AND user_id = :tid"), {"gid": group_id, "tid": target_id})
     db.session.commit()
+    target_name = get_username_by_id(target_id) or str(target_id)
+    send_system_message(group_id, f"👤 {current_user.username} 将群组转让给 {target_name}")
     gn = get_group_name(group_id)
     socketio.emit('ownership_transferred', {"id": group_id, "name": gn, "new_creator_id": target_id}, to=str(group_id))
     return {"success": True}
@@ -646,6 +693,8 @@ def handle_promote_to_admin(data):
         "UPDATE group_members SET role = 'admin' WHERE chat_id = 'group:' || :gid AND user_id = :uid"
     ), {"gid": group_id, "uid": target_id})
     db.session.commit()
+    target_name = get_username_by_id(target_id) or str(target_id)
+    send_system_message(group_id, f"👤 {current_user.username} 将 {target_name} 提升为管理员")
     gn = get_group_name(group_id)
     socketio.emit('admin_promoted', {"id": group_id, "name": gn, "user_id": target_id}, to=str(group_id))
     return {"success": True}
@@ -670,6 +719,8 @@ def handle_demote_from_admin(data):
         "UPDATE group_members SET role = 'member' WHERE chat_id = 'group:' || :gid AND user_id = :uid"
     ), {"gid": group_id, "uid": target_id})
     db.session.commit()
+    target_name = get_username_by_id(target_id) or str(target_id)
+    send_system_message(group_id, f"👤 {current_user.username} 取消了 {target_name} 的管理员身份")
     gn = get_group_name(group_id)
     socketio.emit('admin_demoted', {"id": group_id, "name": gn, "user_id": target_id}, to=str(group_id))
     return {"success": True}
@@ -781,11 +832,23 @@ def handle_group_message(data):
         return
     message_id = row[0]
 
+    # 为所有群成员创建 user_message_status（发送者已读，其余未读）
+    sender_id = int(current_user.id)
+    db.session.execute(text("""
+        INSERT INTO user_message_status (user_id, message_id, chat_id, chat_type, is_read, read_at)
+        SELECT gm.user_id, :mid, :cid, 'group',
+               CASE WHEN gm.user_id = :sid THEN TRUE ELSE FALSE END,
+               CASE WHEN gm.user_id = :sid THEN NOW() ELSE NULL END
+        FROM group_members gm
+        WHERE gm.chat_id = :cid
+        ON CONFLICT (user_id, message_id) DO NOTHING
+    """), {"mid": message_id, "cid": chat_id, "sid": sender_id})
+    db.session.commit()
+
     # --- @提及 处理 ---
     text = data['text']
     at_pattern = re.findall(r'@(\w+)', text)
     is_at_all = any(t.lower() in ('all', 'everyone') for t in at_pattern)
-    sender_id = int(current_user.id)
 
     if is_at_all:
         # @all: 标记所有群成员为被提及
