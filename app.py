@@ -1,5 +1,6 @@
 import os
 import re
+import uuid
 
 from flask import (
     Flask,
@@ -7,12 +8,14 @@ from flask import (
     request,
     redirect,
     url_for,
+    send_from_directory,
 )
 from flask_login import LoginManager, UserMixin, current_user, login_user, logout_user
 from flask_socketio import SocketIO, emit, join_room
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
 from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.utils import secure_filename
 
 from tools import login_required, authenticated_only
 
@@ -21,6 +24,9 @@ app = Flask(__name__)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:314159@localhost/chat_web'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
 db = SQLAlchemy(app)
@@ -207,6 +213,9 @@ def login():
         if len(user) != 1 or not check_password_hash(user[0][2], password):
             return {"success": False, "error": "Invalid username or password"}
 
+        if not user[0][4]:  # is_active 检查
+            return {"success": False, "error": "Account is deactivated"}
+
         user_obj = User(user[0][0], user[0][1])
         login_user(user_obj)
         db.session.execute(text("UPDATE users SET last_login = NOW() WHERE username = :username"), {"username": username})
@@ -257,6 +266,29 @@ def api_users():
     return {"users": users, "friendStates": friend_states}
 
 
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf', 'txt', 'zip', 'doc', 'docx'}
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+@app.route('/api/upload', methods=['POST'])
+@login_required
+def api_upload():
+    """上传文件/图片，返回访问 URL"""
+    if 'file' not in request.files:
+        return {"error": "No file provided"}, 400
+    file = request.files['file']
+    if not file.filename:
+        return {"error": "Empty filename"}, 400
+    if not allowed_file(file.filename):
+        return {"error": "File type not allowed"}, 400
+    ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+    filename = f"{uuid.uuid4().hex}.{ext}"
+    file.save(os.path.join(UPLOAD_FOLDER, filename))
+    url = f"/static/uploads/{filename}"
+    return {"url": url, "filename": file.filename}
+
+
 def get_group_count(group_id):
     """返回群组当前成员数"""
     row = db.session.execute(text(
@@ -284,6 +316,22 @@ def get_group_name(group_id):
         "SELECT group_name FROM groups WHERE id = :gid"
     ), {"gid": group_id}).fetchone()
     return row[0] if row else "Unknown"
+
+
+def get_group_alias(group_id, user_id):
+    """获取用户在群组中的自定义昵称"""
+    row = db.session.execute(text(
+        "SELECT alias FROM group_members WHERE chat_id = 'group:' || :gid AND user_id = :uid"
+    ), {"gid": group_id, "uid": user_id}).fetchone()
+    return row[0] if row and row[0] else None
+
+
+def get_display_name(group_id, user_id):
+    """获取用户在群组中的显示名（优先 alias，否则 username）"""
+    alias = get_group_alias(group_id, user_id)
+    if alias:
+        return alias
+    return get_username_by_id(user_id) or str(user_id)
 
 
 def send_system_message(group_id, content):
@@ -328,7 +376,7 @@ def api_group_members(group_id):
         return {"error": "Not a member of this group"}, 403
 
     rows = db.session.execute(text("""
-        SELECT u.id, u.username, gm.joined_at, gm.role,
+        SELECT u.id, u.username, gm.joined_at, gm.role, gm.alias,
                CASE WHEN gm.role = 'owner' THEN TRUE ELSE FALSE END AS is_creator
         FROM group_members gm
         JOIN users u ON gm.user_id = u.id
@@ -341,7 +389,8 @@ def api_group_members(group_id):
         "username": row[1],
         "joined_at": row[2].isoformat() if row[2] else None,
         "role": row[3],
-        "is_creator": row[4]
+        "alias": row[4],
+        "is_creator": row[5]
     } for row in rows]
     return {"members": members, "group_id": group_id}
 
@@ -363,7 +412,7 @@ def api_private_messages(target_id):
     chat_id = f"{uid1}:{uid2}"
     messages = db.session.execute(text(
         """
-        SELECT m.id, m.sender_id, m.content, m.created_at, u.username,
+        SELECT m.id, m.sender_id, m.content, m.created_at, u.username, m.msg_type,
                m.reply_to_id, ru.username AS reply_username, rm.content AS reply_content
         FROM messages m
         LEFT JOIN users u ON m.sender_id = u.id
@@ -384,7 +433,8 @@ def api_private_messages(target_id):
     return {"messages": [{
         "id": m[0], "sender_id": m[1], "content": m[2],
         "created_at": m[3].isoformat() if m[3] else None, "sender_username": m[4],
-        "reply_to": {"id": m[5], "username": m[6], "content": m[7]} if m[5] else None
+        "msg_type": m[5],
+        "reply_to": {"id": m[6], "username": m[7], "content": m[8]} if m[6] else None
     } for m in messages]}
 
 @app.route('/api/group_messages/<int:group_id>')
@@ -397,7 +447,7 @@ def api_group_messages(group_id):
     chat_id = f"group:{group_id}"
     messages = db.session.execute(text(
         """
-        SELECT m.id, m.sender_id, m.content, m.created_at, u.username,
+        SELECT m.id, m.sender_id, m.content, m.created_at, u.username, m.msg_type,
                m.reply_to_id, ru.username AS reply_username, rm.content AS reply_content
         FROM messages m
         LEFT JOIN users u ON m.sender_id = u.id
@@ -418,7 +468,8 @@ def api_group_messages(group_id):
     return {"messages": [{
         "id": m[0], "sender_id": m[1], "content": m[2],
         "created_at": m[3].isoformat() if m[3] else None, "sender_username": m[4],
-        "reply_to": {"id": m[5], "username": m[6], "content": m[7]} if m[5] else None
+        "msg_type": m[5],
+        "reply_to": {"id": m[6], "username": m[7], "content": m[8]} if m[6] else None
     } for m in messages]}
 
 @app.route('/api/unread_counts')
@@ -607,6 +658,21 @@ def handle_remove_from_group(data):
             socketio.emit('removed_from_group', {"id": group_id, "name": get_group_name(group_id)}, to=ts)
     return {"success": True}
 
+@socketio.on('set_group_alias')
+@authenticated_only
+def handle_set_group_alias(data):
+    user_id = int(current_user.id)
+    group_id = int(data.get('group_id'))
+    alias = (data.get('alias') or '').strip()[:100]
+    if not is_group_member(group_id, user_id):
+        return {"error": "Not a member of this group"}
+    db.session.execute(text(
+        "UPDATE group_members SET alias = :alias WHERE chat_id = 'group:' || :gid AND user_id = :uid"
+    ), {"alias": alias or None, "gid": group_id, "uid": user_id})
+    db.session.commit()
+    return {"success": True, "alias": alias or None}
+
+
 @socketio.on('delete_group')
 @authenticated_only
 def handle_delete_group_socket(data):
@@ -761,16 +827,18 @@ def handle_private_message(data):
     chat_id = f"{uid1}:{uid2}"
     # 存储消息到数据库
     reply_to = data.get('replyTo')
+    msg_type = data.get('msgType', 'text')
     result = db.session.execute(text(
         """
         INSERT INTO messages (chat_id, chat_type, sender_id, msg_type, content, reply_to_id)
-        VALUES (:chat_id, 'private', :sender_id, 'text', :content, :reply_to_id)
+        VALUES (:chat_id, 'private', :sender_id, :msg_type, :content, :reply_to_id)
         RETURNING id, created_at
         """
     ), {
         'chat_id': chat_id,
         'sender_id': user['user_id'],
-        'content': data['text'],
+        'msg_type': msg_type,
+        'content': data.get('text') or data.get('url', ''),
         'reply_to_id': reply_to
     })
     row = result.fetchone()
@@ -797,8 +865,8 @@ def handle_private_message(data):
         'from': user['username'],
         'from_id': user['user_id'],
         'to_id': target_id,
-        'text': data['text'],
-        'msg_type': 'private',
+        'text': data.get('text') or data.get('url', ''),
+        'msg_type': msg_type,
         'created_at': row[1].isoformat() if row[1] else None,
         'reply_to': reply_to
     }
@@ -813,17 +881,19 @@ def handle_group_message(data):
     group_id = data.get('groupId')
     chat_id = f"group:{group_id}"
     reply_to = data.get('replyTo')
+    msg_type = data.get('msgType', 'text')
     # 存储消息到数据库
     result = db.session.execute(text(
         """
         INSERT INTO messages (chat_id, chat_type, sender_id, msg_type, content, reply_to_id)
-        VALUES (:chat_id, 'group', :sender_id, 'text', :content, :reply_to_id)
+        VALUES (:chat_id, 'group', :sender_id, :msg_type, :content, :reply_to_id)
         RETURNING id, created_at
         """
     ), {
         'chat_id': chat_id,
         'sender_id': int(current_user.id),
-        'content': data['text'],
+        'msg_type': msg_type,
+        'content': data.get('text') or data.get('url', ''),
         'reply_to_id': reply_to
     })
     row = result.fetchone()
@@ -900,13 +970,14 @@ def handle_group_message(data):
             }, to=sid)
     # --- @提及 处理结束 ---
 
+    display_name = get_display_name(group_id, int(current_user.id))
     msg = {
         'id': row[0],
-        'from': current_user.username,
+        'from': display_name,
         'from_id': int(current_user.id),
         'group_id': group_id,
-        'text': data['text'],
-        'msg_type': 'group',
+        'text': data.get('text') or data.get('url', ''),
+        'msg_type': msg_type,
         'created_at': row[1].isoformat() if row[1] else None,
         'reply_to': reply_to
     }
@@ -974,6 +1045,21 @@ def handle_delete_message_for_me(data):
     """), {"uid": user_id, "mid": message_id, "cid": msg_row[1], "ct": msg_row[2]})
     db.session.commit()
     return {"success": True, "message_id": message_id}
+
+
+@socketio.on('deactivate_my_account')
+@authenticated_only
+def handle_deactivate_my_account():
+    """停用自己的账号"""
+    user_id = int(current_user.id)
+    db.session.execute(text(
+        "UPDATE users SET is_active = FALSE WHERE id = :uid"
+    ), {"uid": user_id})
+    db.session.commit()
+    sid = user_id_to_sid.get(user_id)
+    if sid:
+        socketio.emit('account_deactivated', {"message": "Your account has been deactivated"}, to=sid)
+    return {"success": True}
 
 
 @socketio.on('friend_add')
