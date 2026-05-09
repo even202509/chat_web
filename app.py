@@ -803,7 +803,9 @@ def handle_global_message(data):
     msg = {
         'from': user['username'],
         'from_id': user['user_id'],
-        'text': data['text'],
+        'text': data.get('text') or data.get('url', ''),
+        'msg_type': data.get('msgType', 'text'),
+        'fileName': data.get('fileName'),
         'created_at': data.get('timestamp')
     }
     PUBLIC_CHAT_CACHE.append(msg)
@@ -916,7 +918,7 @@ def handle_group_message(data):
     db.session.commit()
 
     # --- @提及 处理 ---
-    text = data['text']
+    text = data.get('text') or data.get('url', '')
     at_pattern = re.findall(r'@(\w+)', text)
     is_at_all = any(t.lower() in ('all', 'everyone') for t in at_pattern)
 
