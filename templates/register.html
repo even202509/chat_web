@@ -1,0 +1,115 @@
+{% extends "layout.html" %}
+{% block title %}VibeChat{% endblock %}
+
+{% block main %}
+<div class="flex min-h-[calc(100vh-64px)] items-center justify-center bg-slate-50 px-4 py-10">
+    <div id="register-card" class="w-full max-w-md rounded-[2rem] border border-slate-200 bg-white/95 p-8 shadow-sm">
+        <div class="mb-6 text-center">
+            <p class="text-sm font-semibold uppercase tracking-[0.24em] text-slate-400">VibeChat</p>
+            <h1 class="mt-3 text-3xl font-semibold text-slate-900">Join VibeChat</h1>
+            <p class="mt-2 text-sm text-slate-500">Create your account to start chatting.</p>
+        </div>
+
+        <div v-if="error" class="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            [[ error ]]
+        </div>
+
+        <form class="space-y-4" @submit.prevent="submitRegister">
+            <label class="block">
+                <span class="mb-2 block text-sm font-medium text-slate-700">Username</span>
+                <input
+                    v-model="registerForm.username"
+                    type="text"
+                    autocomplete="username"
+                    placeholder="Your username"
+                    class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                />
+            </label>
+            <label class="block">
+                <span class="mb-2 block text-sm font-medium text-slate-700">Password</span>
+                <input
+                    v-model="registerForm.password"
+                    type="password"
+                    autocomplete="new-password"
+                    placeholder="Password"
+                    class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                />
+            </label>
+            <label class="block">
+                <span class="mb-2 block text-sm font-medium text-slate-700">Confirm Password</span>
+                <input
+                    v-model="registerForm.confirmPassword"
+                    type="password"
+                    autocomplete="new-password"
+                    placeholder="Confirm Password"
+                    class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                />
+            </label>
+            <button
+                type="submit"
+                class="w-full rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+            >
+                Create Account
+            </button>
+        </form>
+
+        <p class="mt-6 text-center text-sm text-slate-500">
+            Already have an account?
+            <a href="/login" class="font-semibold text-blue-600 hover:text-blue-700">Sign in</a>
+        </p>
+    </div>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+const { createApp } = Vue;
+
+const registerForm = Vue.reactive({
+    username: '',
+    password: '',
+    confirmPassword: ''
+});
+
+const app = createApp({
+    delimiters: ["[[", "]]"],
+    data() {
+        return {
+            error: '',
+            registerForm: registerForm
+        };
+    },
+    methods: {
+        async submitRegister() {
+            this.error = '';
+            if (registerForm.password !== registerForm.confirmPassword) {
+                this.error = 'Passwords do not match';
+                return;
+            }
+            const payload = new URLSearchParams();
+            payload.append('username', registerForm.username);
+            payload.append('password', registerForm.password);
+            payload.append('confirmation', registerForm.confirmPassword);
+
+            try {
+                const response = await fetch('/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: payload.toString()
+                });
+                const data = await response.json();
+                if (data.success) {
+                    window.location.href = '/';
+                } else {
+                    this.error = data.error || 'Registration failed';
+                }
+            } catch (e) {
+                this.error = 'Network error';
+            }
+        }
+    }
+});
+
+app.mount('#app');
+</script>
+{% endblock %}

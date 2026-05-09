@@ -1,0 +1,1011 @@
+{% extends "layout.html" %} {% block title %}VibeChat{% endblock %} {% block
+main %}
+<div class="flex h-full overflow-hidden bg-slate-50 text-slate-900">
+  <aside
+    class="hidden md:flex md:w-1/4 border-r border-slate-200 bg-white/90 p-5 flex-col gap-6"
+  >
+    <div class="flex items-center gap-3 rounded-3xl bg-slate-50 p-4">
+      <div
+        class="flex h-14 w-14 items-center justify-center rounded-3xl bg-gradient-to-br from-sky-500 to-cyan-400 text-xl font-bold text-white"
+      >
+        [[ username.charAt(0).toUpperCase() ]]
+      </div>
+      <div>
+        <p class="text-sm uppercase tracking-[0.24em] text-slate-400">
+          Logged in as
+        </p>
+        <p class="text-lg font-semibold text-slate-900">[[ username ]]</p>
+      </div>
+    </div>
+
+    <div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+      <div class="flex gap-2 rounded-full bg-white p-1 text-sm shadow-sm">
+        <button
+          type="button"
+          @click="setSidebarTab('Friends')"
+          :class="sidebarTab === 'Friends' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-900'"
+          class="flex-1 rounded-full px-3 py-2"
+        >
+          Friends
+        </button>
+        <button
+          type="button"
+          @click="setSidebarTab('Groups')"
+          :class="sidebarTab === 'Groups' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-900'"
+          class="flex-1 rounded-full px-3 py-2"
+        >
+          Groups
+        </button>
+      </div>
+
+      <div class="mt-4 space-y-3">
+        <template v-if="sidebarTab === 'Friends'">
+          <div v-if="incomingRequests().length" class="space-y-2">
+            <div class="text-xs uppercase tracking-[0.24em] text-slate-400">
+              Friend Requests
+            </div>
+            <div
+              v-for="user in incomingRequests()"
+              :key="`req-${user.id}`"
+              class="rounded-3xl border border-slate-200 bg-slate-50 px-3 py-3"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <p class="font-semibold text-slate-900">[[ user.name ]]</p>
+                </div>
+                <div class="flex gap-2">
+                  <button
+                    type="button"
+                    @click.stop="acceptFriend(user)"
+                    class="rounded-2xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700"
+                  >
+                    Accept
+                  </button>
+                  <button
+                    type="button"
+                    @click.stop="rejectFriend(user)"
+                    class="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="outgoingRequests().length" class="space-y-2">
+            <div class="text-xs uppercase tracking-[0.24em] text-slate-400">
+              Sent requests
+            </div>
+            <div
+              v-for="user in outgoingRequests()"
+              :key="`sent-${user.id}`"
+              class="flex items-center justify-between rounded-3xl border border-slate-200 bg-slate-50 px-3 py-3"
+            >
+              <div>
+                <p class="font-semibold text-slate-900">[[ user.name ]]</p>
+                <p class="text-xs text-slate-500">Waiting for approval</p>
+              </div>
+              <span
+                class="rounded-full bg-slate-200 px-3 py-1 text-[11px] text-slate-600"
+                >Pending</span
+              >
+            </div>
+          </div>
+
+          <div
+            v-for="friend in friends"
+            :key="friend.id"
+            @click="selectChat(friend, 'private')"
+            @contextmenu.prevent="openContextMenu($event, friend, 'private')"
+            :class="activeChat.type === 'private' && activeChat.id === friend.id ? 'bg-slate-100' : 'hover:bg-slate-100'"
+            class="relative flex cursor-pointer items-center gap-3 rounded-3xl px-3 py-3 transition"
+          >
+            <div
+              class="flex h-11 w-11 items-center justify-center rounded-3xl bg-sky-100 text-sky-700 font-semibold"
+            >
+              [[ friend.avatar ]]
+            </div>
+            <div>
+              <p class="font-semibold text-slate-900">[[ friend.name ]]</p>
+              <p class="text-xs text-slate-500">[[ friend.status ]]</p>
+            </div>
+            <div
+              v-if="friend.unread"
+              class="ml-auto flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white"
+            >
+              [[ friend.unread > 99 ? '99+' : friend.unread ]]
+            </div>
+          </div>
+        </template>
+        <template v-else>
+          <button
+            type="button"
+            @click="showCreateGroup = true"
+            class="flex w-full items-center gap-2 rounded-2xl border border-dashed border-slate-300 px-3 py-2 text-sm text-slate-500 hover:border-emerald-400 hover:text-emerald-600 transition"
+          >
+            <span class="text-lg font-bold leading-none">+</span>
+            Create Group
+          </button>
+          <div
+            v-for="group in groups"
+            :key="group.id"
+            @click="selectChat(group, 'group')"
+            @contextmenu.prevent="openContextMenu($event, group, 'group')"
+            :class="activeChat.type === 'group' && activeChat.id === group.id ? 'bg-slate-100' : 'hover:bg-slate-100'"
+            class="relative flex cursor-pointer items-center gap-3 rounded-3xl px-3 py-3 transition"
+          >
+            <div
+              class="flex h-11 w-11 items-center justify-center rounded-3xl bg-emerald-100 text-emerald-700 font-semibold"
+            >
+              [[ group.avatar ]]
+            </div>
+            <div>
+              <p class="font-semibold text-slate-900">[[ group.name ]]</p>
+              <p class="text-xs text-slate-500">[[ group.members ]] members</p>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <button
+      type="button"
+      @click="selectChat({ id: 'global', title: 'Global Chat' }, 'global')"
+      :class="activeChat.type === 'global' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'"
+      class="mt-auto flex items-center gap-3 rounded-3xl border border-slate-200 px-4 py-3 font-semibold shadow-sm transition"
+    >
+      <span
+        class="inline-flex h-10 w-10 items-center justify-center rounded-3xl bg-slate-100 text-slate-700"
+        >#</span
+      >
+      Global Chat
+    </button>
+  </aside>
+
+  <section
+    class="flex flex-1 flex-col overflow-hidden bg-white shadow-sm md:rounded-l-3xl"
+  >
+    <div class="border-b border-slate-200 bg-slate-50 p-5">
+      <div
+        class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"
+      >
+        <div>
+          <p class="text-sm text-slate-500">Current conversation</p>
+          <h1 class="text-2xl font-semibold text-slate-900">
+            [[ activeChat.title ]]
+          </h1>
+        </div>
+        <div class="mt-4 flex flex-wrap items-center gap-3 sm:mt-0">
+          <span
+            class="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600"
+            >[[ activeChat.type === 'global' ? 'Public Chat' : activeChat.type
+            === 'group' ? 'Group chat' : 'Private chat' ]]</span
+          >
+          <span
+            class="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600"
+            >[[ activeUsers.length ]] online</span
+          >
+        </div>
+      </div>
+    </div>
+
+    <div class="flex flex-1 overflow-hidden">
+      <div class="flex-1 overflow-hidden p-4">
+        <div
+          id="messageContainer"
+          class="flex h-full flex-col gap-3 overflow-y-auto pr-1 pb-2"
+          style="scroll-behavior: smooth"
+        >
+          <template v-if="messages.length">
+            <div
+              v-for="message in messages"
+              :key="message.id"
+              :class="message.fromSelf ? 'self-end items-end' : 'self-start items-start'"
+              class="flex max-w-[85%] flex-col"
+            >
+              <div class="flex items-end gap-2">
+                <button
+                  v-if="!message.fromSelf"
+                  type="button"
+                  @click.stop="openAvatarMenu($event, message.sender)"
+                  class="flex h-10 w-10 items-center justify-center rounded-3xl bg-slate-100 text-slate-700 font-semibold"
+                >
+                  [[ message.sender.avatar ]]
+                </button>
+                <div
+                  :class="message.fromSelf ? 'rounded-3xl rounded-br-none bg-blue-600 text-white' : 'rounded-3xl rounded-tl-none bg-slate-100 text-slate-900'"
+                  class="px-4 py-3 text-sm leading-6"
+                >
+                  <p class="font-semibold" v-if="!message.fromSelf">
+                    [[ message.sender.name ]]
+                  </p>
+                  <p>[[ message.text ]]</p>
+                </div>
+              </div>
+              <span class="mt-1 text-[11px] text-slate-400"
+                >[[ message.time ]]</span
+              >
+            </div>
+          </template>
+          <div
+            v-else
+            class="flex h-full items-center justify-center text-center text-slate-500"
+          >
+            <div>
+              <p class="text-lg font-semibold">No messages yet</p>
+              <p class="mt-2 text-sm">
+                Start the conversation [[ activeChat.type === 'private' ? 'with'
+                : 'in' ]] [[ activeChat.title]].
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <form
+      class="border-t border-slate-200 bg-slate-50 p-4"
+      @submit.prevent="sendMessage"
+    >
+      <div class="flex flex-col gap-3 sm:flex-row">
+        <input
+          v-model="messageInput"
+          type="text"
+          placeholder="Type a message..."
+          class="flex-1 rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+        />
+        <button
+          type="submit"
+          class="inline-flex items-center justify-center rounded-3xl bg-sky-600 px-5 py-3 text-sm font-semibold text-white hover:bg-sky-700"
+        >
+          Send
+        </button>
+      </div>
+    </form>
+  </section>
+
+  <!-- Create Group Modal -->
+  <div
+    v-if="showCreateGroup"
+    @click.self="showCreateGroup = false; newGroupName = ''"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+  >
+    <div class="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
+      <h2 class="text-lg font-semibold text-slate-900">Create Group</h2>
+      <p class="mt-1 text-sm text-slate-500">
+        Enter a name for your new group.
+      </p>
+      <form @submit.prevent="createGroup" class="mt-4 space-y-4">
+        <input
+          v-model="newGroupName"
+          type="text"
+          placeholder="Group name..."
+          maxlength="100"
+          class="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm outline-none focus:border-emerald-400"
+        />
+        <div class="flex justify-end gap-2">
+          <button
+            type="button"
+            @click="showCreateGroup = false; newGroupName = ''"
+            class="rounded-2xl px-4 py-2 text-sm text-slate-600 hover:bg-slate-100"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            :disabled="!newGroupName.trim()"
+            class="rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            Create
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Invite Member Modal -->
+  <div
+    v-if="showInviteModal"
+    @click.self="showInviteModal = false"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+  >
+    <div class="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
+      <h2 class="text-lg font-semibold text-slate-900">Invite to Group</h2>
+      <p class="mt-1 text-sm text-slate-500">
+        Select a friend to invite to [[ inviteTargetGroup?.name ]]
+      </p>
+      <div class="mt-4 max-h-60 space-y-1 overflow-y-auto">
+        <div
+          v-if="friends.length === 0"
+          class="py-4 text-center text-sm text-slate-400"
+        >
+          No friends to invite yet.
+        </div>
+        <button
+          v-for="friend in friends"
+          :key="'inv-' + friend.id"
+          type="button"
+          @click="inviteToGroup(friend)"
+          class="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left hover:bg-slate-100"
+        >
+          <div
+            class="flex h-9 w-9 items-center justify-center rounded-2xl bg-sky-100 text-sm font-semibold text-sky-700"
+          >
+            [[ friend.avatar ]]
+          </div>
+          <p class="text-sm font-medium text-slate-900">[[ friend.name ]]</p>
+        </button>
+      </div>
+      <div class="mt-4 flex justify-end">
+        <button
+          type="button"
+          @click="showInviteModal = false"
+          class="rounded-2xl px-4 py-2 text-sm text-slate-600 hover:bg-slate-100"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div
+    v-if="contextMenu.visible"
+    @click.self="contextMenu.visible = false"
+    class="fixed inset-0 z-40"
+  >
+    <div
+      @click.stop
+      class="absolute z-50 rounded-3xl border border-slate-200 bg-white p-3 shadow-2xl"
+      :style="`top: ${contextMenu.y}px; left: ${contextMenu.x}px; min-width: 200px;`"
+    >
+      <button
+        type="button"
+        class="w-full rounded-2xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+        @click="clearHistory"
+      >
+        Clear History
+      </button>
+      <button
+        v-if="contextMenu.type === 'private'"
+        type="button"
+        class="w-full rounded-2xl px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+        @click="removeFriend(contextMenu.item)"
+      >
+        Remove Friend
+      </button>
+      <template v-if="contextMenu.type === 'group'">
+        <button
+          type="button"
+          class="w-full rounded-2xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+          @click="openInviteModal(contextMenu.item)"
+        >
+          Invite Members
+        </button>
+        <button
+          type="button"
+          class="w-full rounded-2xl px-3 py-2 text-left text-sm text-amber-600 hover:bg-amber-50"
+          @click="leaveGroup(contextMenu.item)"
+        >
+          Leave Group
+        </button>
+        <button
+          v-if="contextMenu.item.creator_id == userId"
+          type="button"
+          class="w-full rounded-2xl px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+          @click="deleteGroup(contextMenu.item)"
+        >
+          Delete Group
+        </button>
+      </template>
+    </div>
+  </div>
+
+  <div
+    v-if="avatarMenu.visible"
+    @click.self="closeAvatarMenu"
+    class="fixed inset-0 z-40"
+  >
+    <div
+      @click.stop
+      class="absolute z-50 rounded-3xl border border-slate-200 bg-white p-4 shadow-2xl"
+      :style="`top: ${avatarMenu.y}px; left: ${avatarMenu.x}px; min-width: 220px;`"
+    >
+      <div class="mb-3 flex items-center gap-3">
+        <div
+          class="flex h-12 w-12 items-center justify-center rounded-3xl bg-slate-100 text-slate-700 font-semibold"
+        >
+          [[ avatarMenu.user?.avatar ]]
+        </div>
+        <div>
+          <p class="font-semibold text-slate-900">
+            [[ avatarMenu.user?.name ]]
+          </p>
+          <p class="text-sm text-slate-500">Global user</p>
+        </div>
+      </div>
+      <button
+        type="button"
+        class="mb-2 w-full rounded-2xl border border-slate-200 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+        @click="viewProfile(avatarMenu.user)"
+      >
+        View Profile
+      </button>
+      <button
+        type="button"
+        class="w-full rounded-2xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700"
+        @click="handleFriendAction(avatarMenu.user)"
+      >
+        [[ friendButtonText(avatarMenu.user) ]]
+      </button>
+    </div>
+  </div>
+</div>
+{% endblock %} {% block script %}
+<script>
+  window.userId = "{{ user_id }}";
+  window.username = "{{ username }}";
+
+  const { createApp } = Vue;
+  const socket = io();
+
+  const app = createApp({
+    delimiters: ["[[", "]]"],
+    data() {
+      return {
+        userId: window.userId,
+        username: window.username,
+        sidebarTab: "Friends",
+        activeChat: {
+          type: "global",
+          id: "global",
+          title: "Global Chat",
+        },
+        activeUsers: [],
+        allUsers: [],
+        friendStates: {}, // { userId: "add" | "pending" | "accepted" | "chat" }
+        groups: [],
+        showCreateGroup: false,
+        newGroupName: "",
+        showInviteModal: false,
+        inviteTargetGroup: null,
+        messages: [],
+        globalMessages: [],
+        messageInput: "",
+        contextMenu: { visible: false, x: 0, y: 0, item: null, type: "" },
+        avatarMenu: { visible: false, x: 0, y: 0, user: null },
+        unreadCounts: {},
+      };
+    },
+
+    computed: {
+      friends() {
+        return this.allUsers
+          .filter((u) => this.friendStates[u.id] === "chat")
+          .map((u) => ({
+            id: u.id,
+            name: u.name,
+            avatar: u.avatar,
+            status: this.activeUsers.some((ou) => ou.user_id == u.id)
+              ? "Online"
+              : "Offline",
+            unread: this.unreadCounts[u.id] || 0,
+          }));
+      },
+    },
+
+    mounted() {
+      socket.on("connect", () => {
+        socket.emit("join_global");
+        socket.emit("get_online_users");
+        this.groups.forEach((g) => socket.emit("join_group", g.id));
+      });
+
+      socket.on("get_online_users", (users) => {
+        this.activeUsers.splice(0, this.activeUsers.length, ...users);
+      });
+
+      socket.on("user_online", (user) => {
+        socket.emit("get_online_users");
+      });
+
+      socket.on("user_offline", (user) => {
+        socket.emit("get_online_users");
+      });
+
+      // 初始化好友列表
+      fetch("/api/users")
+        .then((response) => response.json())
+        .then((data) => {
+          // 填充allUsers数组
+          if (data.users && data.friendStates) {
+            this.allUsers = data.users || [];
+            this.friendStates = data.friendStates || {};
+            console.log(this.allUsers);
+          }
+        });
+
+      fetch("/api/global_messages")
+        .then((response) => response.json())
+        .then((data) => {
+          if (data.messages) {
+            this.globalMessages = data.messages.map((msg) => ({
+              id: `global-${Math.random()}`,
+              sender: {
+                id: msg.from_id,
+                name: msg.from,
+                avatar: msg.from.charAt(0).toUpperCase(),
+              },
+              text: msg.text,
+              time: getRelativeTime(new Date(msg.created_at).getTime()),
+              fromSelf: msg.from === this.username,
+            }));
+            this.messages = this.globalMessages;
+          }
+        });
+
+      // 加载未读消息计数
+      fetch("/api/unread_counts")
+        .then((response) => response.json())
+        .then((data) => {
+          if (data.unread) {
+            this.unreadCounts = data.unread;
+          }
+        });
+
+      // 全局消息
+      socket.on("global_message", (data) => {
+        const timestamp = getRelativeTime(Date.now());
+        const message = {
+          id: `global-${data.id || Date.now()}-${Math.random()}`,
+          sender: {
+            id: data.from_id,
+            name: data.from,
+            avatar: data.from.charAt(0).toUpperCase(),
+          },
+          text: data.text,
+          time: timestamp,
+          fromSelf: data.sender === this.username,
+        };
+        this.globalMessages.push(message);
+        if (this.globalMessages.length > 50) {
+          this.globalMessages.shift(); // 保持全局消息列表最多50条
+        }
+        if (this.activeChat.type === "global") {
+          this.messages = this.globalMessages;
+        }
+      });
+
+      // 私聊消息
+      socket.on("private_message", (data) => {
+        const timestamp = getRelativeTime(Date.now());
+        if (
+          this.activeChat.type === "private" &&
+          this.activeChat.id == data.from_id
+        ) {
+          this.messages.push({
+            id: `private-${data.id || Date.now()}-${Math.random()}`,
+            sender: {
+              id: data.from_id,
+              name: data.from,
+              avatar: data.from.charAt(0).toUpperCase(),
+            },
+            text: data.text,
+            time: timestamp,
+            fromSelf: false,
+          });
+        } else {
+          this.unreadCounts[data.from_id] =
+            (this.unreadCounts[data.from_id] || 0) + 1;
+        }
+      });
+
+      // 群聊消息
+      socket.on("group_message", (data) => {
+        const timestamp = getRelativeTime(Date.now());
+        if (
+          this.activeChat.type === "group" &&
+          this.activeChat.id == data.group_id
+        ) {
+          this.messages.push({
+            id: `group-${data.id || Date.now()}-${Math.random()}`,
+            sender: {
+              name: data.from,
+              avatar: data.from.charAt(0).toUpperCase(),
+            },
+            text: data.text,
+            time: timestamp,
+            fromSelf: data.from === this.username,
+          });
+        }
+      });
+
+      socket.on("friend_add", (data) => {
+        this.allUsers.push({
+          id: data.userId,
+          name: data.userName,
+          avatar: data.userName.charAt(0).toUpperCase(),
+        });
+        this.friendStates[data.userId] = "incoming";
+      });
+
+      socket.on("friend_accept", (data) => {
+        this.friendStates[data.userId] = "chat";
+      });
+
+      socket.on("friend_rejected", (data) => {
+        this.friendStates[data.userId] = "add";
+        this.allUsers = this.allUsers.filter((u) => u.id !== data.userId);
+      });
+
+      socket.on("friend_removed", (data) => {
+        this.friendStates[data.userId] = "add";
+        this.allUsers = this.allUsers.filter((u) => u.id !== data.userId);
+      });
+
+      fetch("/api/groups")
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.groups) {
+            this.groups = data.groups;
+            this.groups.forEach((g) => socket.emit("join_group", g.id));
+          }
+        });
+
+      socket.on("added_to_group", (data) => {
+        this.groups.push({
+          id: data.id,
+          name: data.name,
+          avatar: data.avatar,
+          members: data.members,
+          creator_id: data.creator_id,
+        });
+        socket.emit("join_group", data.id);
+      });
+
+      socket.on("removed_from_group", (data) => {
+        this.groups = this.groups.filter((g) => g.id !== data.id);
+        if (this.activeChat.type === "group" && this.activeChat.id == data.id) {
+          this.selectChat({ id: "global", title: "Global Chat" }, "global");
+        }
+      });
+
+      socket.on("group_deleted", (data) => {
+        this.groups = this.groups.filter((g) => g.id !== data.id);
+        if (this.activeChat.type === "group" && this.activeChat.id == data.id) {
+          this.selectChat({ id: "global", title: "Global Chat" }, "global");
+        }
+      });
+
+      socket.on("group_info_updated", (data) => {
+        const g = this.groups.find((g) => g.id == data.id);
+        if (g) g.members = data.members;
+      });
+
+      socket.on("ownership_transferred", (data) => {
+        const g = this.groups.find((g) => g.id == data.id);
+        if (g) {
+          g.creator_id = data.new_creator_id;
+          // 如果新群主是当前用户，更新本地 creator_id
+          if (data.new_creator_id == this.userId)
+            g.creator_id = data.new_creator_id;
+        }
+      });
+    },
+    methods: {
+      addFriend(user) {
+        // 发起好友请求
+        this.friendStates[user.id] = "pending";
+        this.allUsers.push({
+          id: user.id,
+          name: user.name,
+          avatar: user.avatar,
+        });
+        socket.emit("friend_add", { from: user.id });
+      },
+      acceptFriend(user) {
+        this.friendStates[user.id] = "chat";
+        socket.emit("friend_accept", { from: user.id });
+      },
+      rejectFriend(user) {
+        // 拒绝好友请求
+        this.friendStates[user.id] = "add";
+        this.allUsers = this.allUsers.filter((u) => u.id !== user.id);
+        socket.emit("friend_reject", { from: user.id });
+      },
+      removeFriend(user) {
+        if (!confirm(`Remove ${user.name} from friends?`)) return;
+        this.friendStates[user.id] = "add";
+        this.allUsers = this.allUsers.filter((u) => u.id !== user.id);
+        socket.emit("friend_remove", { from: user.id });
+        this.contextMenu.visible = false;
+      },
+
+      incomingRequests() {
+        // 对方发起的请求
+        return this.allUsers.filter(
+          (u) => this.friendStates[u.id] === "incoming",
+        );
+      },
+
+      outgoingRequests() {
+        // 我发起的请求
+        return this.allUsers.filter(
+          (u) => this.friendStates[u.id] === "pending",
+        );
+      },
+
+      createGroup() {
+        const name = this.newGroupName.trim();
+        if (!name) return;
+        socket.emit("create_group", { name }, (resp) => {
+          if (resp.success) {
+            this.groups.push(resp.group);
+            this.showCreateGroup = false;
+            this.newGroupName = "";
+            this.selectChat(resp.group, "group");
+          } else {
+            alert(resp.error);
+          }
+        });
+      },
+
+      openInviteModal(group) {
+        this.inviteTargetGroup = group;
+        this.showInviteModal = true;
+        this.contextMenu.visible = false;
+      },
+
+      inviteToGroup(friend) {
+        socket.emit(
+          "invite_to_group",
+          {
+            group_id: this.inviteTargetGroup.id,
+            user_id: friend.id,
+          },
+          (resp) => {
+            if (resp.error) {
+              alert(resp.error);
+            } else {
+              this.showInviteModal = false;
+            }
+          },
+        );
+      },
+
+      leaveGroup(group) {
+        if (!confirm(`Leave group "${group.name}"?`)) return;
+        socket.emit(
+          "remove_from_group",
+          {
+            group_id: group.id,
+            target_id: Number(this.userId),
+          },
+          (resp) => {
+            if (resp.success) {
+              this.groups = this.groups.filter((g) => g.id !== group.id);
+              if (
+                this.activeChat.type === "group" &&
+                this.activeChat.id == group.id
+              ) {
+                this.selectChat(
+                  { id: "global", title: "Global Chat" },
+                  "global",
+                );
+              }
+            }
+          },
+        );
+        this.contextMenu.visible = false;
+      },
+
+      deleteGroup(group) {
+        if (!confirm(`Delete group "${group.name}"?`)) return;
+        socket.emit("delete_group", { group_id: group.id }, (resp) => {
+          if (resp.success) {
+            this.groups = this.groups.filter((g) => g.id !== group.id);
+            if (
+              this.activeChat.type === "group" &&
+              this.activeChat.id == group.id
+            ) {
+              this.selectChat({ id: "global", title: "Global Chat" }, "global");
+            }
+          }
+        });
+        this.contextMenu.visible = false;
+      },
+
+      setSidebarTab(tab) {
+        this.sidebarTab = tab;
+      },
+
+      openContextMenu(event, item, type) {
+        this.contextMenu = {
+          visible: true,
+          x: event.clientX,
+          y: event.clientY,
+          item,
+          type,
+        };
+      },
+
+      openAvatarMenu(event, user) {
+        if (this.activeChat.type === "private") return;
+        this.avatarMenu = {
+          visible: true,
+          x: event.clientX,
+          y: event.clientY,
+          user,
+        };
+      },
+      closeAvatarMenu() {
+        this.avatarMenu.visible = false;
+      },
+      friendButtonText(user) {
+        const state = this.friendStates[user.id] || "add";
+        if (state === "chat") return "Chat";
+        if (state === "accepted") return "Accepted";
+        if (state === "pending") return "Pending";
+        return "Add Friend";
+      },
+      viewProfile(user) {
+        window.alert(`View profile for ${user.name}`);
+      },
+      handleFriendAction(user) {
+        const currentState = this.friendStates[user.id] || "add";
+        if (currentState === "add") {
+          this.addFriend(user);
+        } else if (currentState === "accepted") {
+          this.acceptFriend(user);
+        } else if (currentState === "chat") {
+          this.selectChat(user, "private");
+          this.avatarMenu.visible = false;
+        } else if (currentState === "pending") {
+          return;
+        }
+      },
+      selectChat(item, type) {
+        // 只有已成为好友（chat状态）才能私聊
+        if (type === "private" && this.friendStates[item.id] !== "chat") {
+          return;
+        }
+        this.activeChat = {
+          type,
+          id: item.id,
+          title: type === "global" ? "Global Chat" : item.name,
+        };
+        // 切换聊天时加载消息
+        if (type === "global") {
+          this.messages = this.globalMessages;
+        } else if (type === "private") {
+          this.messages = [];
+          this.unreadCounts[item.id] = 0;
+          socket.emit("mark_read", { from_id: item.id });
+          fetch(`/api/private_messages/${item.id}`)
+            .then((response) => response.json())
+            .then((data) => {
+              if (data.error) return;
+
+              this.messages = data.messages.map((msg) => ({
+                id: `private-${msg.id}`,
+                sender: {
+                  id: msg.sender_id,
+                  name: msg.sender_username,
+                  avatar: msg.sender_username.charAt(0).toUpperCase(),
+                },
+                text: msg.content,
+                time: getRelativeTime(new Date(msg.created_at).getTime()),
+                fromSelf: msg.sender_username === this.username,
+              }));
+              this.$nextTick(() => this.scrollToBottom());
+            });
+        } else if (type === "group") {
+          this.messages = [];
+          fetch(`/api/group_messages/${item.id}`)
+            .then((response) => response.json())
+            .then((data) => {
+              if (data.error) return;
+
+              this.messages = data.messages.map((msg) => ({
+                id: `group-${msg.id}`,
+                sender: {
+                  name: msg.sender_username,
+                  avatar: msg.sender_username.charAt(0).toUpperCase(),
+                },
+                text: msg.content,
+                time: getRelativeTime(new Date(msg.created_at).getTime()),
+                fromSelf: msg.sender_username === this.username,
+              }));
+              this.$nextTick(() => this.scrollToBottom());
+            });
+        }
+        this.contextMenu.visible = false;
+        this.avatarMenu.visible = false;
+      },
+      sendMessage() {
+        const text = this.messageInput.trim();
+        if (!text) return;
+        const timestamp = getRelativeTime(Date.now());
+        let msgObj = {
+          id: `out-${username}-${Date.now()}`,
+          sender: {
+            name: this.username,
+            avatar: this.username.charAt(0).toUpperCase(),
+          },
+          text,
+          time: timestamp,
+          fromSelf: true,
+        };
+        if (this.activeChat.type === "global") {
+          socket.emit("global_message", {
+            text,
+            timestamp: Date.now(),
+          });
+          this.messages.push(msgObj);
+        } else if (this.activeChat.type === "private") {
+          socket.emit("private_message", {
+            targetId: this.activeChat.id,
+            text,
+          });
+          this.messages.push(msgObj);
+        } else if (this.activeChat.type === "group") {
+          socket.emit("group_message", {
+            groupId: this.activeChat.id,
+            text,
+          });
+          this.messages.push(msgObj);
+        }
+        this.messageInput = "";
+      },
+      scrollToBottom() {
+        const container = document.getElementById("messageContainer");
+        if (container) {
+          container.scrollTop = container.scrollHeight;
+        }
+      },
+      clearHistory() {
+        if (!confirm(`Clear chat history for ${this.contextMenu.item.name}? This action cannot be undone.`)) {
+          return;
+        }
+        socket.emit("clear_history", {
+          type: this.contextMenu.type,
+          id: this.contextMenu.item.id,
+        });
+        if (
+          this.activeChat.type === this.contextMenu.type &&
+          this.activeChat.id === this.contextMenu.item.id
+        ) {
+          this.messages = [];
+        }
+      },
+    },
+  });
+
+  app.mount("#app");
+
+  function getRelativeTime(timestamp) {
+    const now = Date.now();
+    const diff = (now - timestamp) / 1000; // Convert to seconds
+
+    if (diff < 60) {
+      return `Just now`;
+    }
+    if (diff < 3600) {
+      if (Math.floor(diff / 60) === 1) {
+        return `1 minute ago`;
+      }
+      return `${Math.floor(diff / 60)} minutes ago`;
+    }
+    if (diff < 86400) {
+      if (Math.floor(diff / 3600) === 1) {
+        return `1 hour ago`;
+      }
+      return `${Math.floor(diff / 3600)} hours ago`;
+    }
+    if (Math.floor(diff / 86400) === 1) {
+      return `1 day ago`;
+    }
+    return `${Math.floor(diff / 86400)} days ago`;
+  }
+</script>
+{% endblock %}

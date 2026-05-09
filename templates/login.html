@@ -1,0 +1,113 @@
+{% extends "layout.html" %} {% block title %}VibeChat{% endblock %} {% block
+main %}
+<div
+  class="flex min-h-[calc(100vh-64px)] items-center justify-center bg-slate-50 px-4 py-10"
+>
+  <div
+    id="login-card"
+    class="w-full max-w-md rounded-[2rem] border border-slate-200 bg-white/95 p-8 shadow-sm"
+  >
+    <div class="mb-6 text-center">
+      <p
+        class="text-sm font-semibold uppercase tracking-[0.24em] text-slate-400"
+      >
+        VibeChat
+      </p>
+      <p class="mt-2 text-sm text-slate-500">
+        Sign in to join the conversation.
+      </p>
+    </div>
+
+    <div
+      v-if="error"
+      class="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+    >
+      [[ error ]]
+    </div>
+
+    <form class="space-y-4" @submit.prevent="submitLogin">
+      <label class="block">
+        <span class="mb-2 block text-sm font-medium text-slate-700"
+          >Username</span
+        >
+        <input
+          v-model="loginForm.username"
+          type="text"
+          autocomplete="username"
+          placeholder="Your username"
+          class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+        />
+      </label>
+      <label class="block">
+        <span class="mb-2 block text-sm font-medium text-slate-700"
+          >Password</span
+        >
+        <input
+          v-model="loginForm.password"
+          type="password"
+          autocomplete="current-password"
+          placeholder="Password"
+          class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+        />
+      </label>
+      <button
+        type="submit"
+        class="w-full rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+      >
+        Log In
+      </button>
+    </form>
+
+    <p class="mt-6 text-center text-sm text-slate-500">
+      New to VibeChat?
+      <a
+        href="/register"
+        class="font-semibold text-blue-600 hover:text-blue-700"
+        >Create an account</a
+      >
+    </p>
+  </div>
+</div>
+{% endblock %} {% block script %}
+<script>
+  const loginForm = Vue.reactive({
+    username: "",
+    password: "",
+  });
+
+  const { createApp, ref, reactive, computed } = Vue;
+  createApp({
+    delimiters: ["[[", "]]"],
+    data() {
+      return {
+        error: "",
+        loginForm: loginForm,
+      };
+    },
+    methods: {
+      async submitLogin() {
+        this.error = "";
+        const payload = new URLSearchParams();
+        payload.append("username", loginForm.username);
+        payload.append("password", loginForm.password);
+
+        try {
+          const response = await fetch("/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: payload.toString(),
+          });
+          const data = await response.json();
+          if (data.success) {
+            window.location.href = "/";
+          } else {
+            this.error = data.error || "Login failed";
+          }
+        } catch (e) {
+          this.error = "Network error";
+        }
+      },
+    },
+  }).mount("#app");
+</script>
+{% endblock %}
