@@ -213,7 +213,7 @@ def login():
         if len(user) != 1 or not check_password_hash(user[0][2], password):
             return {"success": False, "error": "Invalid username or password"}
 
-        if not user[0][4]:  # is_active 检查
+        if not user[0][5]:  # is_active 检查
             return {"success": False, "error": "Account is deactivated"}
 
         user_obj = User(user[0][0], user[0][1])

@@ -763,7 +763,7 @@ main %}
           id: `global-${Date.now()}-${Math.random()}`,
           sender: { id: data.from_id, name: data.from, avatar: data.from.charAt(0).toUpperCase() },
           text: data.text, time: getRelativeTime(Date.now()),
-          fromSelf: data.from === this.username, msg_type: 'text',
+          fromSelf: data.from === this.username, msg_type: data.msg_type || 'text',
         };
         this.globalMessages.push(msg);
         if (this.globalMessages.length > 50) this.globalMessages.shift();
