@@ -746,7 +746,7 @@ main %}
               text: msg.text,
               time: getRelativeTime(new Date(msg.created_at).getTime()),
               fromSelf: msg.from === this.username,
-              msg_type: 'text',
+              msg_type: msg.msg_type || 'text',
             }));
             this.messages = this.globalMessages;
           }
@@ -1230,7 +1230,9 @@ main %}
         };
 
         if (this.activeChat.type === "global") {
-          socket.emit("global_message", { text: content, timestamp: Date.now() });
+          socket.emit("global_message", { text: msgType === 'text' ? content : undefined, url: msgType !== 'text' ? content : undefined, msgType, timestamp: Date.now() });
+          this.globalMessages.push(msgObj);
+          if (this.globalMessages.length > 50) this.globalMessages.shift();
         } else if (this.activeChat.type === "private") {
           socket.emit("private_message", { ...baseData, targetId: this.activeChat.id });
         } else if (this.activeChat.type === "group") {
