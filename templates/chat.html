@@ -356,7 +356,7 @@ main %}
 
     <form
       class="border-t border-slate-200 bg-slate-50 p-4"
-      @submit.prevent="sendMessage"
+      @submit.prevent="sendMessage()"
     >
       <div class="flex flex-col gap-3 sm:flex-row">
         <!-- 文件上传按钮 -->
@@ -1233,13 +1233,14 @@ main %}
           socket.emit("global_message", { text: msgType === 'text' ? content : undefined, url: msgType !== 'text' ? content : undefined, msgType, timestamp: Date.now() });
           this.globalMessages.push(msgObj);
           if (this.globalMessages.length > 50) this.globalMessages.shift();
-        } else if (this.activeChat.type === "private") {
-          socket.emit("private_message", { ...baseData, targetId: this.activeChat.id });
-        } else if (this.activeChat.type === "group") {
-          socket.emit("group_message", { ...baseData, groupId: this.activeChat.id });
+        } else {
+          if (this.activeChat.type === "private") {
+            socket.emit("private_message", { ...baseData, targetId: this.activeChat.id });
+          } else if (this.activeChat.type === "group") {
+            socket.emit("group_message", { ...baseData, groupId: this.activeChat.id });
+          }
+          this.messages.push(msgObj);
         }
-
-        this.messages.push(msgObj);
         this.messageInput = "";
         this.replyTarget = null;
         this.$nextTick(() => this.scrollToBottom());
