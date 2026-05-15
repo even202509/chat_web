@@ -69,6 +69,7 @@ def get_users_with_relationships(user_id):
         """
         SELECT f.incoming_id AS friend_id, 
                 u.username,
+                u.avatar_url,
                 CASE
                     WHEN f.status = 'pending' THEN 'pending'
                     when f.status = 'accepted' THEN 'chat'
@@ -81,6 +82,7 @@ def get_users_with_relationships(user_id):
         
         SELECT f.outgoing_id AS friend_id,
         u.username,
+        u.avatar_url,
         CASE
             WHEN f.status = 'pending' THEN 'incoming'
             when f.status = 'accepted' THEN 'chat'
@@ -100,7 +102,8 @@ def get_users_with_relationships(user_id):
                 "id": row[0],
                 "name": row[1],
                 "avatar": row[1][0].upper(),
-                "friendStates": row[2]
+                "avatarUrl": row[2] or "",
+                "friendStates": row[3]
             }
         )
     return users
@@ -109,6 +112,11 @@ def get_users_with_relationships(user_id):
 def get_username_by_id(user_id):
     row = db.session.execute(text("SELECT username FROM users WHERE id = :id"), {"id": user_id}).fetchone()
     return row[0] if row else None
+
+
+def get_avatar_url(user_id):
+    row = db.session.execute(text("SELECT avatar_url FROM users WHERE id = :id"), {"id": user_id}).fetchone()
+    return row[0] or "" if row else ""
 
 
 def are_friends(user_id, target_id):
@@ -195,7 +203,8 @@ MAX_PUBLIC_MSGS = 50
 def index():
      user_id = get_current_user_id()
      username = current_user.username
-     return render_template('chat.html', user_id=user_id, username=username) 
+     avatar_url = get_avatar_url(user_id)
+     return render_template('chat.html', user_id=user_id, username=username, avatar_url=avatar_url) 
 
 
 @app.route('/profile/<int:user_id>')
@@ -497,7 +506,7 @@ def api_private_messages(target_id):
     chat_id = f"{uid1}:{uid2}"
     messages = db.session.execute(text(
         """
-        SELECT m.id, m.sender_id, m.content, m.created_at, u.username, m.msg_type,
+        SELECT m.id, m.sender_id, m.content, m.created_at, u.username, u.avatar_url, m.msg_type,
                m.reply_to_id, ru.username AS reply_username, rm.content AS reply_content
         FROM messages m
         LEFT JOIN users u ON m.sender_id = u.id
@@ -518,8 +527,9 @@ def api_private_messages(target_id):
     return {"messages": [{
         "id": m[0], "sender_id": m[1], "content": m[2],
         "created_at": m[3].isoformat() if m[3] else None, "sender_username": m[4],
-        "msg_type": m[5],
-        "reply_to": {"id": m[6], "username": m[7], "content": m[8]} if m[6] else None
+        "avatar_url": m[5] or "",
+        "msg_type": m[6],
+        "reply_to": {"id": m[7], "username": m[8], "content": m[9]} if m[7] else None
     } for m in messages]}
 
 @app.route('/api/group_messages/<int:group_id>')
@@ -532,7 +542,7 @@ def api_group_messages(group_id):
     chat_id = f"group:{group_id}"
     messages = db.session.execute(text(
         """
-        SELECT m.id, m.sender_id, m.content, m.created_at, u.username, m.msg_type,
+        SELECT m.id, m.sender_id, m.content, m.created_at, u.username, u.avatar_url, m.msg_type,
                m.reply_to_id, ru.username AS reply_username, rm.content AS reply_content
         FROM messages m
         LEFT JOIN users u ON m.sender_id = u.id
@@ -553,8 +563,9 @@ def api_group_messages(group_id):
     return {"messages": [{
         "id": m[0], "sender_id": m[1], "content": m[2],
         "created_at": m[3].isoformat() if m[3] else None, "sender_username": m[4],
-        "msg_type": m[5],
-        "reply_to": {"id": m[6], "username": m[7], "content": m[8]} if m[6] else None
+        "avatar_url": m[5] or "",
+        "msg_type": m[6],
+        "reply_to": {"id": m[7], "username": m[8], "content": m[9]} if m[7] else None
     } for m in messages]}
 
 @app.route('/api/unread_counts')
@@ -897,6 +908,7 @@ def handle_global_message(data):
         'id': msg_id,
         'from': user['username'],
         'from_id': user['user_id'],
+        'avatar_url': get_avatar_url(user['user_id']),
         'text': data.get('text') or data.get('url', ''),
         'msg_type': data.get('msgType', 'text'),
         'fileName': data.get('fileName'),
@@ -969,6 +981,7 @@ def handle_private_message(data):
         'id': message_id,
         'from': user['username'],
         'from_id': user['user_id'],
+        'avatar_url': get_avatar_url(user['user_id']),
         'to_id': target_id,
         'text': data.get('text') or data.get('url', ''),
         'msg_type': msg_type,
@@ -1088,6 +1101,7 @@ def handle_group_message(data):
         'id': row[0],
         'from': display_name,
         'from_id': int(current_user.id),
+        'avatar_url': get_avatar_url(int(current_user.id)),
         'group_id': group_id,
         'text': data.get('text') or data.get('url', ''),
         'msg_type': msg_type,
@@ -1189,7 +1203,7 @@ def handle_friend_add(data):
         "INSERT INTO friends (outgoing_id, incoming_id, status) VALUES (:uid, :fid, 'pending')"
     ), {"uid": user['user_id'], "fid": target_id})
     db.session.commit()
-    socketio.emit('friend_add', {"userId": user['user_id'], "userName": userName}, to=user_id_to_sid.get(target_id))
+    socketio.emit('friend_add', {"userId": user['user_id'], "userName": userName, "avatarUrl": get_avatar_url(user['user_id'])}, to=user_id_to_sid.get(target_id))
 
 
 @socketio.on('friend_accept')
@@ -1204,7 +1218,7 @@ def handle_friend_accept(data):
         "UPDATE friends SET status = 'accepted' WHERE outgoing_id = :uid AND incoming_id = :fid AND status = 'pending'"
     ), {"uid": target_id, "fid": user['user_id']})
     db.session.commit()
-    socketio.emit('friend_accept', {"userId": user['user_id'], "userName": userName}, to=user_id_to_sid.get(target_id))
+    socketio.emit('friend_accept', {"userId": user['user_id'], "userName": userName, "avatarUrl": get_avatar_url(user['user_id'])}, to=user_id_to_sid.get(target_id))
 
 
 @socketio.on('friend_reject')

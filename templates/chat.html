@@ -5,7 +5,11 @@ main %}
     class="hidden md:flex md:w-1/4 border-r border-slate-200 bg-white/90 p-5 flex-col gap-6"
   >
     <div class="flex items-center gap-3 rounded-3xl bg-slate-50 p-4">
+      <template v-if="ownAvatarUrl">
+        <img :src="ownAvatarUrl" class="h-14 w-14 rounded-3xl object-cover" />
+      </template>
       <div
+        v-else
         class="flex h-14 w-14 items-center justify-center rounded-3xl bg-gradient-to-br from-sky-500 to-cyan-400 text-xl font-bold text-white"
       >
         [[ username.charAt(0).toUpperCase() ]]
@@ -101,7 +105,11 @@ main %}
             :class="activeChat.type === 'private' && activeChat.id === friend.id ? 'bg-slate-100' : 'hover:bg-slate-100'"
             class="relative flex cursor-pointer items-center gap-3 rounded-3xl px-3 py-3 transition"
           >
+            <template v-if="friend.avatarUrl">
+              <img :src="friend.avatarUrl" class="h-11 w-11 rounded-3xl object-cover" />
+            </template>
             <div
+              v-else
               class="flex h-11 w-11 items-center justify-center rounded-3xl bg-sky-100 text-sky-700 font-semibold"
             >
               [[ friend.avatar ]]
@@ -216,65 +224,58 @@ main %}
               v-for="message in messages"
               :key="message.id"
               @contextmenu.prevent="openMsgMenu($event, message)"
-              class="flex max-w-[85%] flex-col"
-              :class="message.msg_type === 'system' ? 'self-center items-center max-w-full' : (message.fromSelf ? 'self-end items-end' : 'self-start items-start')"
             >
               <!-- system 消息 -->
-              <template v-if="message.msg_type === 'system'">
+              <div v-if="message.msg_type === 'system'" class="flex justify-center">
                 <span class="text-xs text-slate-400 px-3 py-1">[[ message.text ]]</span>
-              </template>
-              <!-- 普通消息 -->
-              <template v-else>
-                <!-- 引用预览 -->
+              </div>
+
+              <!-- 自己的消息（右侧） -->
+              <div v-else-if="message.fromSelf" class="flex flex-col items-end gap-1 mb-3">
+                <div class="flex items-baseline gap-2 mr-1">
+                  <span class="text-[11px] text-slate-400">[[ message.time ]]</span>
+                </div>
                 <div
                   v-if="message.reply_to"
-                  class="mb-1 rounded-xl border-l-2 border-sky-400 bg-slate-100 px-3 py-1 text-xs text-slate-500 max-w-full truncate"
+                  class="mr-1 max-w-[85%] cursor-pointer rounded-xl border-l-2 border-sky-400 bg-slate-100 px-3 py-1 text-xs text-slate-500 truncate"
                   @click="scrollToMsg(message.reply_to.id)"
                 >
                   <span class="font-semibold text-sky-600">[[ message.reply_to.username ]]</span>: [[ message.reply_to.content ]]
                 </div>
-                <div class="flex items-end gap-2">
-                  <button
-                    v-if="!message.fromSelf"
-                    type="button"
-                    @click.stop="openAvatarMenu($event, message.sender)"
-                    class="flex h-10 w-10 items-center justify-center rounded-3xl bg-slate-100 text-slate-700 font-semibold"
-                  >
-                    [[ message.sender.avatar ]]
-                  </button>
+                <div class="max-w-[80%] rounded-2xl rounded-br-md bg-blue-600 px-4 py-2.5 text-sm leading-relaxed text-white shadow-sm">
+                  <p v-if="message.msg_type === 'text'">[[ message.text ]]</p>
+                  <img v-else-if="message.msg_type === 'image'" :src="message.text" class="max-w-xs rounded-xl cursor-pointer" @click="previewImage(message.text)" loading="lazy" />
+                  <a v-else-if="message.msg_type === 'file'" :href="message.text" target="_blank" class="flex items-center gap-2 underline">📎 [[ message.fileName || 'Download' ]]</a>
+                </div>
+              </div>
+
+              <!-- 他人的消息（左侧） -->
+              <div v-else class="flex items-start gap-2.5 mb-3">
+                <template v-if="message.sender.avatarUrl">
+                  <img :src="message.sender.avatarUrl" @click.stop="openAvatarMenu($event, message.sender)" class="mt-0.5 h-9 w-9 rounded-full object-cover cursor-pointer flex-shrink-0" />
+                </template>
+                <div v-else @click.stop="openAvatarMenu($event, message.sender)" class="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600 cursor-pointer">
+                  [[ message.sender.avatar ]]
+                </div>
+                <div class="flex flex-col min-w-0">
+                  <div class="flex items-baseline gap-2 mb-0.5">
+                    <span class="text-sm font-semibold text-slate-800">[[ message.sender.name ]]</span>
+                    <span class="text-[11px] text-slate-400">[[ message.time ]]</span>
+                  </div>
                   <div
-                    :class="message.fromSelf ? 'rounded-3xl rounded-br-none bg-blue-600 text-white' : 'rounded-3xl rounded-tl-none bg-slate-100 text-slate-900'"
-                    class="px-4 py-3 text-sm leading-6"
+                    v-if="message.reply_to"
+                    class="mb-1 max-w-full cursor-pointer rounded-xl border-l-2 border-sky-400 bg-slate-100 px-3 py-1 text-xs text-slate-500 truncate"
+                    @click="scrollToMsg(message.reply_to.id)"
                   >
-                    <p class="font-semibold" v-if="!message.fromSelf">
-                      [[ message.sender.name ]]
-                    </p>
-                    <!-- text -->
+                    <span class="font-semibold text-sky-600">[[ message.reply_to.username ]]</span>: [[ message.reply_to.content ]]
+                  </div>
+                  <div class="max-w-[85%] w-fit rounded-2xl rounded-tl-md bg-slate-100 px-4 py-2.5 text-sm leading-relaxed text-slate-800 shadow-sm">
                     <p v-if="message.msg_type === 'text'">[[ message.text ]]</p>
-                    <!-- image -->
-                    <img
-                      v-else-if="message.msg_type === 'image'"
-                      :src="message.text"
-                      class="max-w-xs rounded-xl cursor-pointer"
-                      @click="previewImage(message.text)"
-                      loading="lazy"
-                    />
-                    <!-- file -->
-                    <a
-                      v-else-if="message.msg_type === 'file'"
-                      :href="message.text"
-                      target="_blank"
-                      class="flex items-center gap-2 underline"
-                    >
-                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                      [[ message.fileName || 'Download' ]]
-                    </a>
+                    <img v-else-if="message.msg_type === 'image'" :src="message.text" class="max-w-xs rounded-xl cursor-pointer" @click="previewImage(message.text)" loading="lazy" />
+                    <a v-else-if="message.msg_type === 'file'" :href="message.text" target="_blank" class="flex items-center gap-2 underline">📎 [[ message.fileName || 'Download' ]]</a>
                   </div>
                 </div>
-                <span class="mt-1 text-[11px] text-slate-400"
-                  >[[ message.time ]]</span
-                >
-              </template>
+              </div>
             </div>
           </template>
           <div
@@ -456,7 +457,11 @@ main %}
           @click="inviteToGroup(friend)"
           class="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left hover:bg-slate-100"
         >
+          <template v-if="friend.avatarUrl">
+            <img :src="friend.avatarUrl" class="h-9 w-9 rounded-2xl object-cover" />
+          </template>
           <div
+            v-else
             class="flex h-9 w-9 items-center justify-center rounded-2xl bg-sky-100 text-sm font-semibold text-sky-700"
           >
             [[ friend.avatar ]]
@@ -595,7 +600,11 @@ main %}
       :style="`top: ${avatarMenu.y}px; left: ${avatarMenu.x}px; min-width: 220px;`"
     >
       <div class="mb-3 flex items-center gap-3">
+        <template v-if="avatarMenu.user?.avatarUrl">
+          <img :src="avatarMenu.user.avatarUrl" class="h-12 w-12 rounded-3xl object-cover" />
+        </template>
         <div
+          v-else
           class="flex h-12 w-12 items-center justify-center rounded-3xl bg-slate-100 text-slate-700 font-semibold"
         >
           [[ avatarMenu.user?.avatar ]]
@@ -662,6 +671,7 @@ main %}
 <script>
   window.userId = "{{ user_id }}";
   window.username = "{{ username }}";
+  window.avatarUrl = "{{ avatar_url }}";
 
   const { createApp } = Vue;
   const socket = io();
@@ -672,6 +682,7 @@ main %}
       return {
         userId: window.userId,
         username: window.username,
+        ownAvatarUrl: window.avatarUrl,
         sidebarTab: "Friends",
         activeChat: { type: "global", id: "global", title: "Global Chat" },
         activeUsers: [],
@@ -750,7 +761,7 @@ main %}
           if (data.messages) {
             this.globalMessages = data.messages.map((msg) => ({
               id: msg.id || `global-${Math.random()}`,
-              sender: { id: msg.from_id, name: msg.from, avatar: msg.from.charAt(0).toUpperCase() },
+              sender: { id: msg.from_id, name: msg.from, avatar: msg.from.charAt(0).toUpperCase(), avatarUrl: msg.avatar_url || "" },
               text: msg.text,
               time: getRelativeTime(new Date(msg.created_at).getTime()),
               fromSelf: msg.from === this.username,
@@ -770,7 +781,7 @@ main %}
       socket.on("global_message", (data) => {
         const msg = {
           id: data.id || `global-${Date.now()}-${Math.random()}`,
-          sender: { id: data.from_id, name: data.from, avatar: data.from.charAt(0).toUpperCase() },
+          sender: { id: data.from_id, name: data.from, avatar: data.from.charAt(0).toUpperCase(), avatarUrl: data.avatar_url || "" },
           text: data.text, time: getRelativeTime(Date.now()),
           fromSelf: data.from === this.username, msg_type: data.msg_type || 'text', reply_to: data.reply_to || null,
         };
@@ -834,7 +845,7 @@ main %}
 
       socket.on("friend_add", (data) => {
         if (!this.allUsers.some(u => u.id == data.userId)) {
-          this.allUsers.push({ id: data.userId, name: data.userName, avatar: data.userName.charAt(0).toUpperCase() });
+          this.allUsers.push({ id: data.userId, name: data.userName, avatar: data.userName.charAt(0).toUpperCase(), avatarUrl: data.avatarUrl || "" });
         }
         this.friendStates[data.userId] = "incoming";
       });
@@ -890,7 +901,7 @@ main %}
       buildMessage(data) {
         return {
           id: `private-${data.id || Date.now()}`,
-          sender: { id: data.from_id, name: data.from, avatar: data.from.charAt(0).toUpperCase() },
+          sender: { id: data.from_id, name: data.from, avatar: data.from.charAt(0).toUpperCase(), avatarUrl: data.avatar_url || "" },
           text: data.text || data.content || '',
           time: getRelativeTime(data.created_at ? new Date(data.created_at).getTime() : Date.now()),
           fromSelf: data.from === this.username || data.from_id == this.userId,
@@ -903,7 +914,7 @@ main %}
       buildGroupMessage(data) {
         return {
           id: `group-${data.id || Date.now()}`,
-          sender: { name: data.from, avatar: (data.from || '?').charAt(0).toUpperCase() },
+          sender: { name: data.from, avatar: (data.from || '?').charAt(0).toUpperCase(), avatarUrl: data.avatar_url || "" },
           text: data.text || data.content || '',
           time: getRelativeTime(data.created_at ? new Date(data.created_at).getTime() : Date.now()),
           fromSelf: data.from === this.username || data.from_id == this.userId,
@@ -1209,6 +1220,7 @@ main %}
             id: msg.sender_id,
             name: msg.sender_username || 'System',
             avatar: (msg.sender_username || '?').charAt(0).toUpperCase(),
+            avatarUrl: msg.avatar_url || "",
           },
           text: msg.content,
           time: getRelativeTime(new Date(msg.created_at).getTime()),
@@ -1226,7 +1238,7 @@ main %}
         const timestamp = getRelativeTime(Date.now());
         let msgObj = {
           id: `out-${Date.now()}`,
-          sender: { name: this.username, avatar: this.username.charAt(0).toUpperCase() },
+          sender: { name: this.username, avatar: this.username.charAt(0).toUpperCase(), avatarUrl: this.ownAvatarUrl },
           text: content,
           time: timestamp,
           fromSelf: true,
