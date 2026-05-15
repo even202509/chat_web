@@ -61,7 +61,7 @@ def message_sender(msg,target_type='global', target_id='global'):
         if target_id in online_users:
             emit('private_message', msg, to=target_id)
     elif target_type == 'group' and target_id:
-        emit('group_message', msg, to=target_id, skip_sid=request.sid) # type: ignore
+        emit('group_message', msg, to=str(target_id), skip_sid=request.sid) # type: ignore
 
 
 def get_users_with_relationships(user_id):
@@ -659,7 +659,7 @@ def handle_join_group(group_id):
         return
     if not is_group_member(gid, user_id):
         return
-    join_room(group_id)
+    join_room(str(group_id))
 
 
 # ==================== 群组管理 SocketIO ====================
