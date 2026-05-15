@@ -198,6 +198,92 @@ def index():
      return render_template('chat.html', user_id=user_id, username=username) 
 
 
+@app.route('/profile/<int:user_id>')
+@login_required
+def profile(user_id):
+    current_id = get_current_user_id()
+    row = db.session.execute(text(
+        "SELECT id, username, created_at, last_login, is_active, avatar_url, bio FROM users WHERE id = :id"
+    ), {"id": user_id}).fetchone()
+    if not row:
+        return "User not found", 404
+    user_info = {
+        "id": row[0],
+        "username": row[1],
+        "created_at": row[2].strftime("%Y-%m-%d") if row[2] else "Unknown",
+        "last_login": row[3].strftime("%Y-%m-%d %H:%M") if row[3] else "Never",
+        "is_active": row[4],
+        "avatar_url": row[5] or "",
+        "bio": row[6] or "",
+    }
+    is_self = current_id == user_id
+    is_friend = are_friends(current_id, user_id)
+    friend_status = "none"
+    if not is_friend and not is_self:
+        existing = db.session.execute(text(
+            "SELECT outgoing_id, status FROM friends "
+            "WHERE (outgoing_id = :uid AND incoming_id = :fid) "
+            "   OR (outgoing_id = :fid AND incoming_id = :uid)"
+        ), {"uid": current_id, "fid": user_id}).fetchone()
+        if existing:
+            if existing[1] == 'pending':
+                friend_status = "sent" if existing[0] == current_id else "received"
+    mutual_groups = 0
+    if not is_self and is_friend:
+        mutual_row = db.session.execute(text("""
+            SELECT COUNT(*) FROM group_members gm1
+            JOIN group_members gm2 ON gm1.chat_id = gm2.chat_id
+            WHERE gm1.user_id = :uid1 AND gm2.user_id = :uid2
+        """), {"uid1": current_id, "uid2": user_id}).fetchone()
+        mutual_groups = mutual_row[0] if mutual_row else 0
+    join_date = db.session.execute(text(
+        "SELECT MIN(joined_at) FROM group_members WHERE user_id = :uid"
+    ), {"uid": user_id}).fetchone()
+    import json
+    profile_data = json.dumps({
+        "user": user_info,
+        "is_self": is_self,
+        "is_friend": is_friend,
+        "friend_status": friend_status,
+        "mutual_groups": mutual_groups,
+        "first_group_join": join_date[0].strftime("%Y-%m-%d") if join_date and join_date[0] else None,
+        "is_online": user_id in user_id_to_sid,
+        "current_id": current_id,
+    })
+    profile_data_tag = '<script type="application/json" id="profile-data">' + profile_data + '</script>'
+    return render_template(
+        'profile.html',
+        profile_data=profile_data_tag,
+        profile_username=user_info['username'],
+        is_self=is_self,
+        is_friend=is_friend,
+        friend_status=friend_status,
+        mutual_groups=mutual_groups,
+        first_group_join=join_date[0].strftime("%Y-%m-%d") if join_date and join_date[0] else None,
+        is_online=user_id in user_id_to_sid,
+        current_id=current_id,
+    )
+
+
+@app.route('/api/profile/update', methods=['POST'])
+@login_required
+def api_profile_update():
+    user_id = get_current_user_id()
+    bio = request.form.get('bio', '').strip()[:220]
+    db.session.execute(text(
+        "UPDATE users SET bio = :bio WHERE id = :uid"
+    ), {"bio": bio, "uid": user_id})
+    file = request.files.get('avatar')
+    if file and file.filename:
+        filename = secure_filename(f"{uuid.uuid4().hex}_{file.filename}")
+        file.save(os.path.join(UPLOAD_FOLDER, filename))
+        db.session.execute(text(
+            "UPDATE users SET avatar_url = :url WHERE id = :uid"
+        ), {"url": f"/static/uploads/{filename}", "uid": user_id})
+    db.session.commit()
+    return {"success": True}
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -398,7 +484,6 @@ def api_group_members(group_id):
 @app.route('/api/global_messages')
 @login_required
 def api_global_messages():
-    print(f"API called: /api/global_messages: 返回消息{PUBLIC_CHAT_CACHE}")
     return {"messages": PUBLIC_CHAT_CACHE}
 
 @app.route('/api/private_messages/<int:target_id>')
@@ -820,7 +905,6 @@ def handle_global_message(data):
         'reply_to': reply_data
     }
     PUBLIC_CHAT_CACHE.append(msg)
-    print(f"Received global message from {user['username']}: {data['text']}")
     if len(PUBLIC_CHAT_CACHE) > MAX_PUBLIC_MSGS:
         PUBLIC_CHAT_CACHE.pop(0)
 

@@ -733,6 +733,14 @@ main %}
           if (data.users && data.friendStates) {
             this.allUsers = data.users || [];
             this.friendStates = data.friendStates || {};
+            const params = new URLSearchParams(window.location.search);
+            const chatId = params.get('chat');
+            if (chatId) {
+              const target = (data.users || []).find(u => u.id == chatId);
+              if (target && data.friendStates[chatId] === 'chat') {
+                this.selectChat(target, 'private');
+              }
+            }
           }
         });
 
@@ -1148,7 +1156,7 @@ main %}
         return "Add Friend";
       },
 
-      viewProfile(user) { window.alert(`View profile for ${user.name}`); },
+      viewProfile(user) { this.avatarMenu.visible = false; window.location.href = `/profile/${user.id || user.sender?.id}`; },
 
       handleFriendAction(user) {
         const state = this.friendStates[user.id] || "add";

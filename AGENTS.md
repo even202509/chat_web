@@ -16,7 +16,8 @@
 - created_at    | timestamp with time zone |          |          | CURRENT_TIMESTAMP
 - last_login    | timestamp with time zone |          |          |
 - is_active     | boolean                  |          |          | true
-
+- avatar_url    | character varying(2048)  |          |          | NULL::character varying
+- bio           | character varying(220)   |          |          | NULL::character varying
 #### friends
 - id          | integer                  |          | not null | nextval('friends_id_seq'::regclass)
 - outgoing_id | integer                  |          | not null |
