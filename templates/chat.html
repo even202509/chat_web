@@ -171,8 +171,7 @@ main %}
     >
       <span
         class="inline-flex h-10 w-10 items-center justify-center rounded-3xl bg-slate-100 text-slate-700"
-        >#</span
-      >
+        ><img src="/static/favicon.svg" height="40" width="40" /></span>
       Global Chat
     </button>
   </aside>
@@ -718,6 +717,7 @@ main %}
             id: u.id,
             name: u.name,
             avatar: u.avatar,
+            avatarUrl: u.avatarUrl || "",
             status: this.activeUsers.some((ou) => ou.user_id == u.id) ? "Online" : "Offline",
             unread: this.unreadCounts[u.id] || 0,
           }));
