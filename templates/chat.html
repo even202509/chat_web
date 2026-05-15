@@ -741,12 +741,13 @@ main %}
         .then((data) => {
           if (data.messages) {
             this.globalMessages = data.messages.map((msg) => ({
-              id: `global-${Math.random()}`,
+              id: msg.id || `global-${Math.random()}`,
               sender: { id: msg.from_id, name: msg.from, avatar: msg.from.charAt(0).toUpperCase() },
               text: msg.text,
               time: getRelativeTime(new Date(msg.created_at).getTime()),
               fromSelf: msg.from === this.username,
               msg_type: msg.msg_type || 'text',
+              reply_to: msg.reply_to || null,
             }));
             this.messages = this.globalMessages;
           }
@@ -760,10 +761,10 @@ main %}
 
       socket.on("global_message", (data) => {
         const msg = {
-          id: `global-${Date.now()}-${Math.random()}`,
+          id: data.id || `global-${Date.now()}-${Math.random()}`,
           sender: { id: data.from_id, name: data.from, avatar: data.from.charAt(0).toUpperCase() },
           text: data.text, time: getRelativeTime(Date.now()),
-          fromSelf: data.from === this.username, msg_type: data.msg_type || 'text',
+          fromSelf: data.from === this.username, msg_type: data.msg_type || 'text', reply_to: data.reply_to || null,
         };
         this.globalMessages.push(msg);
         if (this.globalMessages.length > 50) this.globalMessages.shift();
@@ -989,7 +990,12 @@ main %}
 
       // === 消息删除 ===
       openMsgMenu(event, msg) {
-        this.msgMenu = { visible: true, x: event.clientX, y: event.clientY, msg };
+        let x = event.clientX;
+        let y = event.clientY;
+        const menuW = 190;
+        if (x + menuW > window.innerWidth) x = window.innerWidth - menuW - 10;
+        if (y + 120 > window.innerHeight) y = window.innerHeight - 130;
+        this.msgMenu = { visible: true, x, y, msg };
       },
 
       deleteMessage(msg) {
@@ -1230,7 +1236,9 @@ main %}
         };
 
         if (this.activeChat.type === "global") {
-          socket.emit("global_message", { text: msgType === 'text' ? content : undefined, url: msgType !== 'text' ? content : undefined, msgType, timestamp: Date.now() });
+          const clientId = 'g-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+          msgObj.id = clientId;
+          socket.emit("global_message", { text: msgType === 'text' ? content : undefined, url: msgType !== 'text' ? content : undefined, msgType, timestamp: Date.now(), replyTo: this.replyTarget ? this.replyTarget.id : null, clientId });
           this.globalMessages.push(msgObj);
           if (this.globalMessages.length > 50) this.globalMessages.shift();
         } else {

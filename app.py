@@ -800,13 +800,24 @@ def handle_global_message(data):
         return
     global PUBLIC_CHAT_CACHE
     
+    msg_id = data.get('clientId') or str(uuid.uuid4())
+    reply_to_id = data.get('replyTo')
+    reply_data = None
+    if reply_to_id:
+        for m in PUBLIC_CHAT_CACHE:
+            if m.get('id') == reply_to_id:
+                reply_data = {'id': reply_to_id, 'username': m['from'], 'content': m.get('text', '')}
+                break
     msg = {
+        'id': msg_id,
         'from': user['username'],
         'from_id': user['user_id'],
         'text': data.get('text') or data.get('url', ''),
         'msg_type': data.get('msgType', 'text'),
         'fileName': data.get('fileName'),
-        'created_at': data.get('timestamp')
+        'created_at': data.get('timestamp'),
+        'reply_to_id': reply_to_id,
+        'reply_to': reply_data
     }
     PUBLIC_CHAT_CACHE.append(msg)
     print(f"Received global message from {user['username']}: {data['text']}")
@@ -848,6 +859,14 @@ def handle_private_message(data):
     if not row:
         return
     message_id = row[0]
+    reply_data = None
+    if reply_to:
+        reply_row = db.session.execute(text(
+            "SELECT m.id, u.username, m.content FROM messages m "
+            "JOIN users u ON m.sender_id = u.id WHERE m.id = :id"
+        ), {"id": reply_to}).fetchone()
+        if reply_row:
+            reply_data = {"id": reply_row[0], "username": reply_row[1], "content": reply_row[2]}
     # 插入 user_message_status：发送者已读，接收者未读
     db.session.execute(text(
         """
@@ -870,7 +889,7 @@ def handle_private_message(data):
         'text': data.get('text') or data.get('url', ''),
         'msg_type': msg_type,
         'created_at': row[1].isoformat() if row[1] else None,
-        'reply_to': reply_to
+        'reply_to': reply_data
     }
     target_sid = user_id_to_sid.get(target_id)
     if target_sid:
@@ -903,6 +922,14 @@ def handle_group_message(data):
     if not row:
         return
     message_id = row[0]
+    reply_data = None
+    if reply_to:
+        reply_row = db.session.execute(text(
+            "SELECT m.id, u.username, m.content FROM messages m "
+            "JOIN users u ON m.sender_id = u.id WHERE m.id = :id"
+        ), {"id": reply_to}).fetchone()
+        if reply_row:
+            reply_data = {"id": reply_row[0], "username": reply_row[1], "content": reply_row[2]}
 
     # 为所有群成员创建 user_message_status（发送者已读，其余未读）
     sender_id = int(current_user.id)
@@ -918,8 +945,8 @@ def handle_group_message(data):
     db.session.commit()
 
     # --- @提及 处理 ---
-    text = data.get('text') or data.get('url', '')
-    at_pattern = re.findall(r'@(\w+)', text)
+    msg_text = data.get('text') or data.get('url', '')
+    at_pattern = re.findall(r'@(\w+)', msg_text)
     is_at_all = any(t.lower() in ('all', 'everyone') for t in at_pattern)
 
     if is_at_all:
@@ -981,7 +1008,7 @@ def handle_group_message(data):
         'text': data.get('text') or data.get('url', ''),
         'msg_type': msg_type,
         'created_at': row[1].isoformat() if row[1] else None,
-        'reply_to': reply_to
+        'reply_to': reply_data
     }
     message_sender(msg, target_type='group', target_id=group_id)
 
