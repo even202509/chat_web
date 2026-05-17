@@ -1,6 +1,6 @@
-{% extends "layout.html" %} {% block title %}{{ profile_username }} - Profile{% endblock %} {% block main %}
+{% extends "layout.html" %} {% block title %}{{ profile_username }} - Profile{%
+endblock %} {% block main %}
 <div id="app" class="flex h-full items-center justify-center bg-slate-50 p-6">
-
   <div
     :class="[
       'w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-lg',
@@ -34,9 +34,7 @@
       </template>
 
       <div class="text-center">
-        <p class="text-2xl font-semibold text-slate-900">
-          [[ user.username ]]
-        </p>
+        <p class="text-2xl font-semibold text-slate-900">[[ user.username ]]</p>
         <p class="text-sm text-slate-400">ID: [[ user.id ]]</p>
       </div>
 
@@ -198,12 +196,16 @@
   </div>
 </div>
 {% endblock %} {% block script %}
-{{ profile_data | safe }}
+<script id="profile-data" type="application/json">
+  {{ profile_data | tojson | safe }}
+</script>
 <script>
   const app = Vue.createApp({
     delimiters: ["[[", "]]"],
     data() {
-      const pd = JSON.parse(document.getElementById('profile-data').textContent);
+      const pd = JSON.parse(
+        document.getElementById("profile-data").textContent,
+      );
       return {
         user: pd.user,
         isSelf: pd.is_self,
@@ -242,8 +244,8 @@
           this.friendStatus = "none";
         }
       });
-      this.socket.on("user_online", () => this.isOnline = true);
-      this.socket.on("user_offline", () => this.isOnline = false);
+      this.socket.on("user_online", () => (this.isOnline = true));
+      this.socket.on("user_offline", () => (this.isOnline = false));
     },
     beforeUnmount() {
       if (this.socket) {
@@ -253,24 +255,33 @@
       }
       if (this._addFriendTimer) clearTimeout(this._addFriendTimer);
       if (this.avatarPreview) URL.revokeObjectURL(this.avatarPreview);
-      if (this.user.avatar_url && this.user.avatar_url.startsWith('blob:')) URL.revokeObjectURL(this.user.avatar_url);
+      if (this.user.avatar_url && this.user.avatar_url.startsWith("blob:"))
+        URL.revokeObjectURL(this.user.avatar_url);
     },
     methods: {
       startEdit() {
         this.editBio = this.user.bio || "";
-        if (this.avatarPreview) { URL.revokeObjectURL(this.avatarPreview); this.avatarPreview = null; }
+        if (this.avatarPreview) {
+          URL.revokeObjectURL(this.avatarPreview);
+          this.avatarPreview = null;
+        }
         this.avatarFile = null;
         this.editing = true;
       },
       cancelEdit() {
-        if (this.avatarPreview) { URL.revokeObjectURL(this.avatarPreview); this.avatarPreview = null; }
+        if (this.avatarPreview) {
+          URL.revokeObjectURL(this.avatarPreview);
+          this.avatarPreview = null;
+        }
         this.avatarFile = null;
         this.editing = false;
       },
       onAvatarPicked(e) {
         if (this.avatarPreview) URL.revokeObjectURL(this.avatarPreview);
         this.avatarFile = e.target.files[0] || null;
-        this.avatarPreview = this.avatarFile ? URL.createObjectURL(this.avatarFile) : null;
+        this.avatarPreview = this.avatarFile
+          ? URL.createObjectURL(this.avatarFile)
+          : null;
       },
       async saveProfile() {
         this.saving = true;
@@ -278,13 +289,19 @@
         fd.append("bio", this.editBio);
         if (this.avatarFile) fd.append("avatar", this.avatarFile);
         try {
-          const r = await fetch("/api/profile/update", { method: "POST", body: fd });
+          const r = await fetch("/api/profile/update", {
+            method: "POST",
+            body: fd,
+          });
           const data = await r.json();
           if (data.success) {
             this.user.bio = this.editBio;
             if (this.avatarFile) {
               if (this.avatarPreview) URL.revokeObjectURL(this.avatarPreview);
-              if (this.user.avatar_url && this.user.avatar_url.startsWith('blob:')) {
+              if (
+                this.user.avatar_url &&
+                this.user.avatar_url.startsWith("blob:")
+              ) {
                 URL.revokeObjectURL(this.user.avatar_url);
               }
               this.user.avatar_url = URL.createObjectURL(this.avatarFile);
@@ -298,7 +315,10 @@
       },
       addFriend() {
         this.addingFriend = true;
-        if (this._addFriendTimer) { clearTimeout(this._addFriendTimer); this._addFriendTimer = null; }
+        if (this._addFriendTimer) {
+          clearTimeout(this._addFriendTimer);
+          this._addFriendTimer = null;
+        }
         if (!this.socket) this.socket = io();
         this.socket.emit("friend_add", { from: this.user.id });
         this.socket.on("friend_add", () => {

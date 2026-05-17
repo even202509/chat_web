@@ -92,9 +92,10 @@ main %}
         payload.append("password", loginForm.password);
 
         try {
+          const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
           const response = await fetch("/login", {
             method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            headers: { "Content-Type": "application/x-www-form-urlencoded", "X-CSRFToken": csrf },
             body: payload.toString(),
           });
           const data = await response.json();

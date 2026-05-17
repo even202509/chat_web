@@ -1,6 +1,7 @@
 import os
 import re
 import uuid
+import logging
 
 from flask import (
     Flask,
@@ -9,6 +10,10 @@ from flask import (
     redirect,
     url_for,
 )
+from dotenv import load_dotenv
+from flask_wtf import CSRFProtect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from flask_login import LoginManager, UserMixin, current_user, login_user, logout_user
 from flask_socketio import SocketIO, emit, join_room
 from flask_sqlalchemy import SQLAlchemy
@@ -16,12 +21,39 @@ from sqlalchemy import text
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
-from tools import login_required, authenticated_only
+from tools import (
+    login_required,
+    authenticated_only,
+    validate_username,
+    validate_password,
+    validate_bio,
+    validate_upload_file,
+    validate_image_magic,
+    normalize_image_file,
+    socket_error,
+    socket_success,
+    ALLOWED_AVATAR_EXTENSIONS,
+    ALLOWED_FILE_UPLOAD_EXTENSIONS,
+)
 
 app = Flask(__name__)
 
+# Basic logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:314159@localhost/chat_web'
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+
+load_dotenv(os.path.join(PROJECT_ROOT, '.env'), override=False)
+
+DATABASE_URL = os.getenv('DATABASE_URL')
+SECRET_KEY = os.getenv('SECRET_KEY')
+
+# Fail fast if required secrets/configs are not provided
+if not DATABASE_URL or not SECRET_KEY:
+    raise RuntimeError('Environment variables DATABASE_URL and SECRET_KEY must be set')
+
+app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads')
@@ -187,7 +219,18 @@ def is_group_admin(group_id, user_id):
     return role in ('owner', 'admin')
 
 
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'default-secret-key')
+app.config['SECRET_KEY'] = SECRET_KEY
+# Session / cookie security settings
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['REMEMBER_COOKIE_HTTPONLY'] = True
+app.config['SESSION_PROTECTION'] = 'strong'
+
+# CSRF protection for forms and state-changing requests
+csrf = CSRFProtect(app)
+
+# Rate limiting
+limiter = Limiter(app=app, key_func=get_remote_address)
 socketio = SocketIO(app, manage_session=False)
 online_users = {}
 user_to_sid = {}
@@ -247,8 +290,7 @@ def profile(user_id):
     join_date = db.session.execute(text(
         "SELECT MIN(joined_at) FROM group_members WHERE user_id = :uid"
     ), {"uid": user_id}).fetchone()
-    import json
-    profile_data = json.dumps({
+    profile_payload = {
         "user": user_info,
         "is_self": is_self,
         "is_friend": is_friend,
@@ -257,11 +299,10 @@ def profile(user_id):
         "first_group_join": join_date[0].strftime("%Y-%m-%d") if join_date and join_date[0] else None,
         "is_online": user_id in user_id_to_sid,
         "current_id": current_id,
-    })
-    profile_data_tag = '<script type="application/json" id="profile-data">' + profile_data + '</script>'
+    }
     return render_template(
         'profile.html',
-        profile_data=profile_data_tag,
+        profile_data=profile_payload,
         profile_username=user_info['username'],
         is_self=is_self,
         is_friend=is_friend,
@@ -274,41 +315,73 @@ def profile(user_id):
 
 
 @app.route('/api/profile/update', methods=['POST'])
+@limiter.limit("10 per minute")
 @login_required
 def api_profile_update():
     user_id = get_current_user_id()
-    bio = request.form.get('bio', '').strip()[:220]
+    bio_value = request.form.get('bio', None)
+    valid_bio, bio_error, bio = validate_bio(bio_value)
+    if not valid_bio:
+        return {"success": False, "error": bio_error}, 400
+
     db.session.execute(text(
         "UPDATE users SET bio = :bio WHERE id = :uid"
     ), {"bio": bio, "uid": user_id})
+
     file = request.files.get('avatar')
     if file and file.filename:
-        filename = secure_filename(f"{uuid.uuid4().hex}_{file.filename}")
-        file.save(os.path.join(UPLOAD_FOLDER, filename))
+        valid_file, safe_name, file_error = validate_upload_file(file, allowed_extensions=ALLOWED_AVATAR_EXTENSIONS)
+        if not valid_file:
+            return {"success": False, "error": file_error}, 400
+
+        valid_magic, magic_error = validate_image_magic(file, safe_name)
+        if not valid_magic:
+            return {"success": False, "error": magic_error}, 400
+
+        valid_image, normalized_file, normalize_error = normalize_image_file(file, safe_name)
+        if not valid_image:
+            return {"success": False, "error": normalize_error}, 400
+
+        filename = f"{uuid.uuid4().hex}_{safe_name}"
+        save_path = os.path.join(UPLOAD_FOLDER, filename)
+        try:
+            with open(save_path, 'wb') as out_file:
+                out_file.write(normalized_file.read())
+        except Exception:
+            return {"success": False, "error": "Failed to save file"}, 500
         db.session.execute(text(
             "UPDATE users SET avatar_url = :url WHERE id = :uid"
         ), {"url": f"/static/uploads/{filename}", "uid": user_id})
+
     db.session.commit()
     return {"success": True}
 
 
 @app.route('/login', methods=['GET', 'POST'])
+@limiter.limit("5 per minute")
 def login():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
 
-        # Check
         if not username or not password:
-            return {"success": False, "error": "username and password are required"}
-        
+            return {"success": False, "error": "username and password are required"}, 400
+
+        valid_username, username_error = validate_username(username)
+        if not valid_username:
+            return {"success": False, "error": username_error}, 400
+
+        valid_password, password_error = validate_password(password)
+        if not valid_password:
+            return {"success": False, "error": password_error}, 400
+
         user = db.session.execute(text("SELECT * FROM users WHERE username = :username"), {"username": username}).fetchall()
         
         if len(user) != 1 or not check_password_hash(user[0][2], password):
-            return {"success": False, "error": "Invalid username or password"}
+            return {"success": False, "error": "Invalid username or password"}, 401
 
         if not user[0][5]:  # is_active 检查
-            return {"success": False, "error": "Account is deactivated"}
+            return {"success": False, "error": "Account is deactivated"}, 403
 
         user_obj = User(user[0][0], user[0][1])
         login_user(user_obj)
@@ -320,23 +393,31 @@ def login():
     
 
 @app.route('/register', methods=['GET', 'POST'])
+@limiter.limit("5 per minute")
 def register():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
         confirmation = request.form.get('confirmation')
 
-        # Check
         if not username or not password or not confirmation:
-            return {"success": False, "error": "username, password and confirmation are required"}
+            return {"success": False, "error": "username, password and confirmation are required"}, 400
 
-        if all([username, password, confirmation]) and password != confirmation:
-            return {"success": False, "error": "Passwords do not match"}
+        valid_username, username_error = validate_username(username)
+        if not valid_username:
+            return {"success": False, "error": username_error}, 400
+
+        valid_password, password_error = validate_password(password)
+        if not valid_password:
+            return {"success": False, "error": password_error}, 400
+
+        if password != confirmation:
+            return {"success": False, "error": "Passwords do not match"}, 400
 
         # Check if username already exists
         existing_user = db.session.execute(text("SELECT * FROM users WHERE username = :username LIMIT 1"), {"username": username}).fetchone()
         if existing_user:
-            return {"success": False, "error": "Username already exists"}
+            return {"success": False, "error": "Username already exists"}, 409
 
         # Create new user
         hashed_password = generate_password_hash(password)
@@ -360,27 +441,35 @@ def api_users():
     return {"users": users, "friendStates": friend_states}
 
 
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf', 'txt', 'zip', 'doc', 'docx'}
-
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
 @app.route('/api/upload', methods=['POST'])
+@limiter.limit("10 per minute")
 @login_required
 def api_upload():
-    """上传文件/图片，返回访问 URL"""
+    """上传图片，返回访问 URL"""
     if 'file' not in request.files:
         return {"error": "No file provided"}, 400
     file = request.files['file']
-    if not file.filename:
-        return {"error": "Empty filename"}, 400
-    if not allowed_file(file.filename):
-        return {"error": "File type not allowed"}, 400
-    ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
-    filename = f"{uuid.uuid4().hex}.{ext}"
-    file.save(os.path.join(UPLOAD_FOLDER, filename))
+    valid_file, safe_name, file_error = validate_upload_file(file, allowed_extensions=ALLOWED_FILE_UPLOAD_EXTENSIONS)
+    if not valid_file:
+        return {"error": file_error}, 400
+
+    valid_magic, magic_error = validate_image_magic(file, safe_name)
+    if not valid_magic:
+        return {"error": magic_error}, 400
+
+    valid_image, normalized_file, normalize_error = normalize_image_file(file, safe_name)
+    if not valid_image:
+        return {"error": normalize_error}, 400
+
+    filename = f"{uuid.uuid4().hex}_{safe_name}"
+    save_path = os.path.join(UPLOAD_FOLDER, filename)
+    try:
+        with open(save_path, 'wb') as out_file:
+            out_file.write(normalized_file.read())
+    except Exception:
+        return {"error": "Failed to save file"}, 500
     url = f"/static/uploads/{filename}"
-    return {"url": url, "filename": file.filename}
+    return {"url": url, "filename": safe_name}
 
 
 def get_group_count(group_id):
@@ -637,7 +726,7 @@ def handle_connect():
     online_users[sid] = {"user_id": user_id, "username": username}
     user_to_sid[username] = sid
     user_id_to_sid[user_id] = sid
-    print(f"用户{username}已连接, Session ID: {user_id}")
+    logger.info(f"用户{username}已连接, Session ID: {user_id}")
     emit('user_online', broadcast=True, include_self=False)
 
 @socketio.on('get_online_users')
@@ -672,10 +761,11 @@ def handle_join_group(group_id):
     try:
         gid = int(group_id)
     except (TypeError, ValueError):
-        return
+        return socket_error('Invalid group id', code='INVALID_PAYLOAD')
     if not is_group_member(gid, user_id):
-        return
+        return socket_error('Not a member of this group', code='NOT_A_MEMBER')
     join_room(str(group_id))
+    return socket_success()
 
 
 # ==================== 群组管理 SocketIO ====================
@@ -686,9 +776,9 @@ def handle_create_group_socket(data):
     user_id = int(current_user.id)
     group_name = data.get('name', '').strip() if isinstance(data, dict) else ''
     if not group_name:
-        return {"error": "Group name is required"}
+        return socket_error('Group name is required', code='GROUP_NAME_REQUIRED')
     if len(group_name) > 100:
-        return {"error": "Group name too long (max 100)"}
+        return socket_error('Group name too long (max 100)', code='GROUP_NAME_TOO_LONG')
 
     result = db.session.execute(text("""
         INSERT INTO groups (group_name, creator_id)
@@ -697,7 +787,7 @@ def handle_create_group_socket(data):
     """), {"name": group_name, "uid": user_id})
     row = result.fetchone()
     if not row:
-        return {"error": "Failed to create group"}
+        return socket_error('Failed to create group', code='GROUP_CREATE_FAILED')
     group_id = row[0]
     db.session.execute(text("""
         INSERT INTO group_members (chat_id, user_id, role)
@@ -714,12 +804,12 @@ def handle_invite_to_group(data):
     group_id = int(data.get('group_id'))
     target_id = int(data.get('user_id'))
     if not is_group_admin(group_id, user_id):
-        return {"error": "Only group admins can invite members"}
+        return socket_error('Only group admins can invite members', code='NOT_ALLOWED')
     target = db.session.execute(text("SELECT 1 FROM users WHERE id = :uid"), {"uid": target_id}).fetchone()
     if not target:
-        return {"error": "User not found"}
+        return socket_error('User not found', code='USER_NOT_FOUND')
     if is_group_member(group_id, target_id):
-        return {"error": "User is already a member"}
+        return socket_error('User is already a member', code='ALREADY_MEMBER')
     db.session.execute(text("INSERT INTO group_members (chat_id, user_id, role) VALUES ('group:' || :gid, :uid, 'member')"), {"gid": group_id, "uid": target_id})
     db.session.commit()
     # 系统消息
@@ -744,17 +834,17 @@ def handle_remove_from_group(data):
     target_role = get_group_role(group_id, target_id)
     # Owner 不可被移除
     if target_role == 'owner' and target_id != user_id:
-        return {"error": "Cannot remove the group owner"}
+        return socket_error('Cannot remove the group owner', code='INVALID_OPERATION')
     if target_role == 'owner' and target_id == user_id:
-        return {"error": "Group owner cannot leave; transfer ownership first"}
+        return socket_error('Group owner cannot leave; transfer ownership first', code='INVALID_OPERATION')
     # Admin 只能被 Owner 移除
     if target_role == 'admin' and actor_role != 'owner':
-        return {"error": "Only the group owner can remove admins"}
+        return socket_error('Only the group owner can remove admins', code='NOT_ALLOWED')
     # 非管理员不能移除他人
     if target_id != user_id and actor_role not in ('owner', 'admin'):
-        return {"error": "Only group admins can remove members"}
+        return socket_error('Only group admins can remove members', code='NOT_ALLOWED')
     if not is_group_member(group_id, target_id):
-        return {"error": "User is not a member of this group"}
+        return socket_error('User is not a member of this group', code='NOT_A_MEMBER')
     db.session.execute(text("DELETE FROM group_members WHERE chat_id = 'group:' || :gid AND user_id = :uid"), {"gid": group_id, "uid": target_id})
     db.session.commit()
     # 系统消息
@@ -777,12 +867,12 @@ def handle_set_group_alias(data):
     group_id = int(data.get('group_id'))
     alias = (data.get('alias') or '').strip()[:100]
     if not is_group_member(group_id, user_id):
-        return {"error": "Not a member of this group"}
+        return socket_error('Not a member of this group', code='NOT_A_MEMBER')
     db.session.execute(text(
         "UPDATE group_members SET alias = :alias WHERE chat_id = 'group:' || :gid AND user_id = :uid"
     ), {"alias": alias or None, "gid": group_id, "uid": user_id})
     db.session.commit()
-    return {"success": True, "alias": alias or None}
+    return socket_success(alias=alias or None)
 
 
 @socketio.on('delete_group')
@@ -791,7 +881,7 @@ def handle_delete_group_socket(data):
     user_id = int(current_user.id)
     group_id = int(data.get('group_id'))
     if not is_group_creator(group_id, user_id):
-        return {"error": "Only the group creator can delete the group"}
+        return socket_error('Only the group creator can delete the group', code='NOT_ALLOWED')
     members = db.session.execute(text("SELECT user_id FROM group_members WHERE chat_id = 'group:' || :gid"), {"gid": group_id}).fetchall()
     gn = get_group_name(group_id)
     db.session.execute(text("DELETE FROM group_members WHERE chat_id = 'group:' || :gid"), {"gid": group_id})
@@ -826,7 +916,7 @@ def handle_mark_read(data):
         return {"success": True}
     sender_id = data.get('from_id')
     if not sender_id:
-        return {"error": "sender_id is required"}
+        return socket_error('sender_id is required', code='INVALID_PAYLOAD')
     # 计算 chat_id
     uid1, uid2 = sorted([user_id, int(sender_id)])
     chat_id = f"{uid1}:{uid2}"
@@ -850,11 +940,11 @@ def handle_transfer_ownership(data):
     group_id = int(data.get('group_id'))
     target_id = int(data.get('target_id'))
     if not is_group_creator(group_id, user_id):
-        return {"error": "Only the group creator can transfer ownership"}
+        return socket_error('Only the group creator can transfer ownership', code='NOT_ALLOWED')
     if not is_group_member(group_id, target_id):
-        return {"error": "Target user is not a member of this group"}
+        return socket_error('Target user is not a member of this group', code='NOT_A_MEMBER')
     if target_id == user_id:
-        return {"error": "You are already the owner"}
+        return socket_error('You are already the owner', code='INVALID_OPERATION')
     db.session.execute(text("UPDATE groups SET creator_id = :tid WHERE id = :gid"), {"tid": target_id, "gid": group_id})
     # 更新 group_members 中的角色
     db.session.execute(text("UPDATE group_members SET role = 'member' WHERE chat_id = 'group:' || :gid AND user_id = :uid AND role = 'owner'"), {"gid": group_id, "uid": user_id})
@@ -874,14 +964,14 @@ def handle_promote_to_admin(data):
     group_id = int(data.get('group_id'))
     target_id = int(data.get('target_id'))
     if not is_group_creator(group_id, user_id):
-        return {"error": "Only the group owner can promote admins"}
+        return socket_error('Only the group owner can promote admins', code='NOT_ALLOWED')
     if not is_group_member(group_id, target_id):
-        return {"error": "Target user is not a member of this group"}
+        return socket_error('Target user is not a member of this group', code='NOT_A_MEMBER')
     role = get_group_role(group_id, target_id)
     if role == 'owner':
-        return {"error": "Cannot change owner role"}
+        return socket_error('Cannot change owner role', code='INVALID_OPERATION')
     if role == 'admin':
-        return {"error": "User is already an admin"}
+        return socket_error('User is already an admin', code='INVALID_OPERATION')
     db.session.execute(text(
         "UPDATE group_members SET role = 'admin' WHERE chat_id = 'group:' || :gid AND user_id = :uid"
     ), {"gid": group_id, "uid": target_id})
@@ -900,14 +990,14 @@ def handle_demote_from_admin(data):
     group_id = int(data.get('group_id'))
     target_id = int(data.get('target_id'))
     if not is_group_creator(group_id, user_id):
-        return {"error": "Only the group owner can demote admins"}
+        return socket_error('Only the group owner can demote admins', code='NOT_ALLOWED')
     if not is_group_member(group_id, target_id):
-        return {"error": "Target user is not a member of this group"}
+        return socket_error('Target user is not a member of this group', code='NOT_A_MEMBER')
     role = get_group_role(group_id, target_id)
     if role == 'owner':
-        return {"error": "Cannot change owner role"}
+        return socket_error('Cannot change owner role', code='INVALID_OPERATION')
     if role != 'admin':
-        return {"error": "User is not an admin"}
+        return socket_error('User is not an admin', code='INVALID_OPERATION')
     db.session.execute(text(
         "UPDATE group_members SET role = 'member' WHERE chat_id = 'group:' || :gid AND user_id = :uid"
     ), {"gid": group_id, "uid": target_id})
@@ -1097,6 +1187,10 @@ def handle_group_message(data):
             "from_name": current_user.username, "mention_type": "all"
         }, to=str(group_id))
     elif at_pattern:
+        # Limit number of mentions to prevent excessively large queries
+        MAX_MENTIONS = 10
+        if len(at_pattern) > MAX_MENTIONS:
+            at_pattern = at_pattern[:MAX_MENTIONS]
         # @特定用户: 解析用户名 → user_id
         placeholders = ','.join(f':u{i}' for i in range(len(at_pattern)))
         params = {f'u{i}': uname for i, uname in enumerate(at_pattern)}
@@ -1153,13 +1247,13 @@ def handle_delete_message(data):
         "SELECT id, chat_id, chat_type, sender_id FROM messages WHERE id = :mid AND deleted_at IS NULL"
     ), {"mid": message_id}).fetchone()
     if not msg_row:
-        return {"error": "Message not found or already deleted"}
+        return socket_error('Message not found or already deleted', code='NOT_FOUND')
     chat_id = msg_row[1]
     chat_type = msg_row[2]
     if chat_type == 'group':
         group_id = int(chat_id.split(':', 1)[1])
         if not is_group_admin(group_id, user_id):
-            return {"error": "Only group admins can delete messages"}
+            return socket_error('Only group admins can delete messages', code='NOT_ALLOWED')
         db.session.execute(text(
             "UPDATE messages SET deleted_at = NOW(), deleted_by = :uid WHERE id = :mid"
         ), {"uid": user_id, "mid": message_id})
@@ -1169,7 +1263,7 @@ def handle_delete_message(data):
     elif chat_type == 'private':
         # 私聊：仅发送者可撤回
         if msg_row[3] != user_id:
-            return {"error": "Only the message sender can delete it"}
+            return socket_error('Only the message sender can delete it', code='NOT_ALLOWED')
         db.session.execute(text(
             "UPDATE messages SET deleted_at = NOW(), deleted_by = :uid WHERE id = :mid"
         ), {"uid": user_id, "mid": message_id})
@@ -1181,7 +1275,7 @@ def handle_delete_message(data):
         if other_sid:
             socketio.emit('message_deleted', {"message_id": message_id, "chat_id": chat_id}, to=other_sid)
         return {"success": True}
-    return {"error": "Unknown chat type"}
+    return socket_error('Unknown chat type', code='INVALID_PAYLOAD')
 
 
 @socketio.on('delete_message_for_me')
@@ -1194,7 +1288,7 @@ def handle_delete_message_for_me(data):
         "SELECT id, chat_id, chat_type FROM messages WHERE id = :mid AND deleted_at IS NULL"
     ), {"mid": message_id}).fetchone()
     if not msg_row:
-        return {"error": "Message not found"}
+        return socket_error('Message not found', code='NOT_FOUND')
     db.session.execute(text("""
         INSERT INTO user_message_status (user_id, message_id, chat_id, chat_type, is_deleted, deleted_at)
         VALUES (:uid, :mid, :cid, :ct, TRUE, NOW())
@@ -1330,7 +1424,7 @@ def handle_disconnect():
     if user:
         username = user.get('username')
         user_id = user.get('user_id')
-        print(f"Client disconnected: {username} reason: {request.environ.get('socketio.disconnect_reason', 'Unknown')}")
+        logger.info(f"Client disconnected: {username} reason: {request.environ.get('socketio.disconnect_reason', 'Unknown')}")
         user_to_sid.pop(username, None)
         user_id_to_sid.pop(user_id, None)
         online_users.pop(request.sid, None)  # type: ignore

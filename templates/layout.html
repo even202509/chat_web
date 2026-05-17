@@ -8,6 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <link rel="icon" href="/static/favicon.svg" />
+    <meta name="csrf-token" content="{{ csrf_token() }}" />
   </head>
   <body class="bg-gray-50 text-gray-900">
     <div id="app" class="flex flex-col h-screen">
