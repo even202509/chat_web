@@ -288,9 +288,13 @@ endblock %} {% block main %}
         const fd = new FormData();
         fd.append("bio", this.editBio);
         if (this.avatarFile) fd.append("avatar", this.avatarFile);
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
         try {
           const r = await fetch("/api/profile/update", {
             method: "POST",
+            headers: {
+              'X-CSRFToken': csrfToken,
+            },
             body: fd,
           });
           const data = await r.json();
