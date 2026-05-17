@@ -501,12 +501,15 @@ def api_private_messages(target_id):
     user_id = get_current_user_id()
     if not are_friends(user_id, target_id):
         return {"error": "Not friends"}
-    # 私聊 chat_id: 两个用户ID排序后用冒号连接
     uid1, uid2 = sorted([user_id, target_id]) # type: ignore
     chat_id = f"{uid1}:{uid2}"
+    before_id = request.args.get('before', type=int)
+    limit = 50
+    extra_where = "AND m.id < :before_id" if before_id else ""
     messages = db.session.execute(text(
-        """
-        SELECT m.id, m.sender_id, m.content, m.created_at, u.username, u.avatar_url, m.msg_type,
+        f"""
+        SELECT * FROM (
+            SELECT m.id, m.sender_id, m.content, m.created_at, u.username, u.avatar_url, m.msg_type,
                m.reply_to_id, ru.username AS reply_username, rm.content AS reply_content
         FROM messages m
         LEFT JOIN users u ON m.sender_id = u.id
@@ -515,34 +518,41 @@ def api_private_messages(target_id):
         WHERE m.chat_type = 'private'
           AND m.chat_id = :chat_id
           AND m.deleted_at IS NULL
+          {extra_where}
           AND NOT EXISTS (
               SELECT 1 FROM user_message_status ums
               WHERE ums.message_id = m.id
                 AND ums.user_id = :uid
                 AND ums.is_deleted = TRUE
           )
-        ORDER BY m.created_at
+        ORDER BY m.id DESC
+        LIMIT :limit
+        ) sub ORDER BY id ASC
         """
-    ), {"chat_id": chat_id, "uid": user_id}).fetchall()
+    ), {"chat_id": chat_id, "uid": user_id, "before_id": before_id, "limit": limit}).fetchall()
+    has_more = len(messages) == limit
     return {"messages": [{
         "id": m[0], "sender_id": m[1], "content": m[2],
         "created_at": m[3].isoformat() if m[3] else None, "sender_username": m[4],
         "avatar_url": m[5] or "",
         "msg_type": m[6],
         "reply_to": {"id": m[7], "username": m[8], "content": m[9]} if m[7] else None
-    } for m in messages]}
+    } for m in messages], "has_more": has_more}
 
 @app.route('/api/group_messages/<int:group_id>')
 @login_required
 def api_group_messages(group_id):
     user_id = get_current_user_id()
-    # 校验用户是否为群组成员
     if not is_group_member(group_id, user_id):
         return {"error": "Not a member of this group"}
     chat_id = f"group:{group_id}"
+    before_id = request.args.get('before', type=int)
+    limit = 50
+    extra_where = "AND m.id < :before_id" if before_id else ""
     messages = db.session.execute(text(
-        """
-        SELECT m.id, m.sender_id, m.content, m.created_at,
+        f"""
+        SELECT * FROM (
+            SELECT m.id, m.sender_id, m.content, m.created_at,
                COALESCE(gm.alias, u.username) AS sender_name, u.avatar_url, m.msg_type,
                m.reply_to_id, ru.username AS reply_username, rm.content AS reply_content
         FROM messages m
@@ -553,22 +563,26 @@ def api_group_messages(group_id):
         WHERE m.chat_type = 'group'
           AND m.chat_id = :chat_id
           AND m.deleted_at IS NULL
+          {extra_where}
           AND NOT EXISTS (
               SELECT 1 FROM user_message_status ums
               WHERE ums.message_id = m.id
                 AND ums.user_id = :uid
                 AND ums.is_deleted = TRUE
           )
-        ORDER BY m.created_at
+        ORDER BY m.id DESC
+        LIMIT :limit
+        ) sub ORDER BY id ASC
         """
-    ), {"chat_id": chat_id, "uid": user_id}).fetchall()
+    ), {"chat_id": chat_id, "uid": user_id, "before_id": before_id, "limit": limit}).fetchall()
+    has_more = len(messages) == limit
     return {"messages": [{
         "id": m[0], "sender_id": m[1], "content": m[2],
         "created_at": m[3].isoformat() if m[3] else None, "sender_username": m[4],
         "avatar_url": m[5] or "",
         "msg_type": m[6],
         "reply_to": {"id": m[7], "username": m[8], "content": m[9]} if m[7] else None
-    } for m in messages]}
+    } for m in messages], "has_more": has_more}
 
 @app.route('/api/unread_counts')
 @login_required

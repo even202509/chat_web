@@ -773,6 +773,8 @@ main %}
         transferDialog: { group: null, members: [] },
         imagePreview: null,
         toast: null,
+        hasMoreMessages: false,
+        loadingMore: false,
         _toastTimer: null,
       };
     },
@@ -964,10 +966,23 @@ main %}
         const g = this.groups.find((g) => g.id == data.id);
         if (g) g.members = data.members;
       });
+
+      this._scrollEl = document.getElementById("messageContainer");
+      if (this._scrollEl) {
+        this._onScroll = () => {
+          const el = this._scrollEl;
+          if (el && el.scrollTop <= 50 && this.hasMoreMessages && !this.loadingMore) {
+            this.loadMoreMessages();
+          }
+        };
+        this._scrollEl.addEventListener("scroll", this._onScroll, { passive: true });
+      }
     },
 
     beforeUnmount() {
       if (this._toastTimer) clearTimeout(this._toastTimer);
+      if (this._scrollEl && this._onScroll) this._scrollEl.removeEventListener("scroll", this._onScroll);
+      this._scrollEl = null; this._onScroll = null;
       socket.off();
     },
 
@@ -1300,6 +1315,7 @@ main %}
             .then(data => {
               if (data.error) return;
               this.messages = data.messages.map(msg => this.buildApiMessage(msg, 'private'));
+              this.hasMoreMessages = data.has_more === true;
               this.$nextTick(() => this.scrollToBottom());
             });
         } else if (type === "group") {
@@ -1313,6 +1329,7 @@ main %}
             .then(data => {
               if (data.error) return;
               this.messages = data.messages.map(msg => this.buildApiMessage(msg, 'group'));
+              this.hasMoreMessages = data.has_more === true;
               this.$nextTick(() => this.scrollToBottom());
             });
         }
@@ -1385,6 +1402,40 @@ main %}
         const container = document.getElementById("messageContainer");
         if (container) container.scrollTop = container.scrollHeight;
       },
+
+      loadMoreMessages() {
+        if (this.loadingMore || !this.hasMoreMessages || this.messages.length === 0) return;
+        this.loadingMore = true;
+        const oldest = this.messages[0];
+        const oldestId = parseInt(String(oldest.id).replace(/^(private|group)-/, ''));
+        let url;
+        if (this.activeChat.type === 'group') {
+          url = `/api/group_messages/${this.activeChat.id}?before=${oldestId}`;
+        } else if (this.activeChat.type === 'private') {
+          url = `/api/private_messages/${this.activeChat.id}?before=${oldestId}`;
+        } else {
+          this.loadingMore = false;
+          return;
+        }
+        const prevScrollHeight = this._scrollEl ? this._scrollEl.scrollHeight : 0;
+        fetch(url)
+          .then(r => r.json())
+          .then(data => {
+            if (data.error) return;
+            const prefix = this.activeChat.type === 'group' ? 'group' : 'private';
+            const older = data.messages.map(msg => this.buildApiMessage(msg, prefix));
+            this.messages = older.concat(this.messages);
+            this.hasMoreMessages = data.has_more === true;
+            this.loadingMore = false;
+            this.$nextTick(() => {
+              if (this._scrollEl) {
+                this._scrollEl.scrollTop = this._scrollEl.scrollHeight - prevScrollHeight;
+              }
+            });
+          })
+          .catch(() => { this.loadingMore = false; });
+      },
+
 
       clearHistory() {
         if (!confirm(`Clear chat history for ${this.contextMenu.item.name}?`)) return;
