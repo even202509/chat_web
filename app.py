@@ -471,7 +471,7 @@ def api_group_members(group_id):
         return {"error": "Not a member of this group"}, 403
 
     rows = db.session.execute(text("""
-        SELECT u.id, u.username, gm.joined_at, gm.role, gm.alias,
+        SELECT u.id, u.username, u.avatar_url, gm.joined_at, gm.role, gm.alias,
                CASE WHEN gm.role = 'owner' THEN TRUE ELSE FALSE END AS is_creator
         FROM group_members gm
         JOIN users u ON gm.user_id = u.id
@@ -482,10 +482,11 @@ def api_group_members(group_id):
     members = [{
         "id": row[0],
         "username": row[1],
-        "joined_at": row[2].isoformat() if row[2] else None,
-        "role": row[3],
-        "alias": row[4],
-        "is_creator": row[5]
+        "avatar_url": row[2] or "",
+        "joined_at": row[3].isoformat() if row[3] else None,
+        "role": row[4],
+        "alias": row[5],
+        "is_creator": row[6]
     } for row in rows]
     return {"members": members, "group_id": group_id}
 
@@ -542,10 +543,12 @@ def api_group_messages(group_id):
     chat_id = f"group:{group_id}"
     messages = db.session.execute(text(
         """
-        SELECT m.id, m.sender_id, m.content, m.created_at, u.username, u.avatar_url, m.msg_type,
+        SELECT m.id, m.sender_id, m.content, m.created_at,
+               COALESCE(gm.alias, u.username) AS sender_name, u.avatar_url, m.msg_type,
                m.reply_to_id, ru.username AS reply_username, rm.content AS reply_content
         FROM messages m
         LEFT JOIN users u ON m.sender_id = u.id
+        LEFT JOIN group_members gm ON gm.chat_id = m.chat_id AND gm.user_id = m.sender_id
         LEFT JOIN messages rm ON m.reply_to_id = rm.id
         LEFT JOIN users ru ON rm.sender_id = ru.id
         WHERE m.chat_type = 'group'

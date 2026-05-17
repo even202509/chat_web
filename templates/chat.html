@@ -315,12 +315,12 @@ main %}
             <button
               v-if="m.role === 'member'"
               @click="promoteToAdmin(activeChat.id, m.id)"
-              class="text-xs text-blue-600 hover:underline"
+              class="rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700 hover:bg-blue-200"
             >Promote</button>
             <button
               v-else-if="m.role === 'admin'"
               @click="demoteFromAdmin(activeChat.id, m.id)"
-              class="text-xs text-amber-600 hover:underline"
+              class="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700 hover:bg-amber-200"
             >Demote</button>
           </template>
         </div>
@@ -515,6 +515,14 @@ main %}
           Invite Members
         </button>
         <button
+          v-if="contextMenu.item.creator_id == userId"
+          type="button"
+          class="w-full rounded-2xl px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+          @click="openRemoveMemberModal(contextMenu.item)"
+        >
+          Remove Member
+        </button>
+        <button
           v-if="isGroupOwner(contextMenu.item.id)"
           type="button"
           class="w-full rounded-2xl px-3 py-2 text-left text-sm text-blue-600 hover:bg-blue-50"
@@ -636,15 +644,71 @@ main %}
   <!-- Transfer Ownership Dialog -->
   <div
     v-if="transferDialog.group"
-    @click.self="transferDialog.group = null; transferDialog.target = ''"
+    @click.self="transferDialog.group = null; transferDialog.members = []"
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
   >
-    <div class="w-full max-w-xs rounded-3xl bg-white p-6 shadow-2xl">
+    <div class="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
       <h2 class="text-lg font-semibold text-slate-900">Transfer Ownership</h2>
-      <p class="mt-1 text-sm text-slate-500">Enter user ID to transfer [[ transferDialog.group.name ]]</p>
-      <div class="mt-4 flex gap-2">
-        <input v-model="transferDialog.target" type="number" placeholder="User ID" class="flex-1 rounded-xl border px-3 py-2 text-sm" />
-        <button @click="doTransferOwnership" class="rounded-xl bg-amber-600 px-4 py-2 text-sm text-white hover:bg-amber-700">Transfer</button>
+      <p class="mt-1 text-sm text-slate-500">Select a member to transfer [[ transferDialog.group.name ]]</p>
+      <div class="mt-4 max-h-60 space-y-1 overflow-y-auto">
+        <div v-if="transferDialog.members.length === 0" class="py-4 text-center text-sm text-slate-400">Loading members...</div>
+        <button
+          v-for="m in transferDialog.members"
+          :key="'tr-' + m.id"
+          type="button"
+          @click="doTransferOwnership(m)"
+          class="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left hover:bg-slate-100"
+        >
+          <template v-if="m.avatar_url">
+            <img :src="m.avatar_url" class="h-9 w-9 rounded-2xl object-cover" />
+          </template>
+          <div v-else class="flex h-9 w-9 items-center justify-center rounded-2xl bg-sky-100 text-sm font-semibold text-sky-700">
+            [[ (m.alias || m.username).charAt(0).toUpperCase() ]]
+          </div>
+          <div>
+            <p class="text-sm font-medium text-slate-900">[[ m.alias || m.username ]]</p>
+            <p class="text-xs text-slate-400">[[ m.role ]]</p>
+          </div>
+        </button>
+      </div>
+      <div class="mt-4 flex justify-end">
+        <button type="button" @click="transferDialog.group = null; transferDialog.members = []" class="rounded-2xl px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Remove Member Modal -->
+  <div
+    v-if="showRemoveModal"
+    @click.self="showRemoveModal = false"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+  >
+    <div class="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
+      <h2 class="text-lg font-semibold text-slate-900">Remove Member</h2>
+      <p class="mt-1 text-sm text-slate-500">Select a member to remove from [[ removeTargetGroup?.name ]]</p>
+      <div class="mt-4 max-h-60 space-y-1 overflow-y-auto">
+        <div v-if="removeMembers.length === 0" class="py-4 text-center text-sm text-slate-400">Loading members...</div>
+        <button
+          v-for="m in removeMembers"
+          :key="'rm-' + m.id"
+          type="button"
+          @click="removeMemberFromGroup(m)"
+          class="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left hover:bg-slate-100"
+        >
+          <template v-if="m.avatar_url">
+            <img :src="m.avatar_url" class="h-9 w-9 rounded-2xl object-cover" />
+          </template>
+          <div v-else class="flex h-9 w-9 items-center justify-center rounded-2xl bg-sky-100 text-sm font-semibold text-sky-700">
+            [[ (m.alias || m.username).charAt(0).toUpperCase() ]]
+          </div>
+          <div>
+            <p class="text-sm font-medium text-slate-900">[[ m.alias || m.username ]]</p>
+            <p class="text-xs text-slate-400">[[ m.role ]]</p>
+          </div>
+        </button>
+      </div>
+      <div class="mt-4 flex justify-end">
+        <button type="button" @click="showRemoveModal = false" class="rounded-2xl px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">Close</button>
       </div>
     </div>
   </div>
@@ -691,7 +755,10 @@ main %}
         showCreateGroup: false,
         newGroupName: "",
         showInviteModal: false,
+        showRemoveModal: false,
         inviteTargetGroup: null,
+        removeTargetGroup: null,
+        removeMembers: [],
         messages: [],
         globalMessages: [],
         messageInput: "",
@@ -703,7 +770,7 @@ main %}
         showMembers: false,
         groupMembers: [],
         myAlias: "",
-        transferDialog: { group: null, target: "" },
+        transferDialog: { group: null, members: [] },
         imagePreview: null,
         toast: null,
       };
@@ -979,18 +1046,48 @@ main %}
       },
 
       showTransferDialog(group) {
-        this.transferDialog = { group, target: "" };
+        this.transferDialog = { group, members: [] };
         this.contextMenu.visible = false;
+        fetch(`/api/groups/${group.id}/members`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.members) {
+              this.transferDialog.members = data.members.filter(m => m.id != this.userId);
+            }
+          });
       },
 
-      doTransferOwnership() {
-        const tid = parseInt(this.transferDialog.target);
-        if (!tid) return alert("Enter a valid user ID");
-        socket.emit("transfer_ownership", { group_id: this.transferDialog.group.id, target_id: tid }, (r) => {
+      doTransferOwnership(member) {
+        if (!confirm(`Transfer ownership of \"${this.transferDialog.group.name}\" to ${member.name}?`)) return;
+        socket.emit("transfer_ownership", { group_id: this.transferDialog.group.id, target_id: member.id }, (r) => {
           if (r.success) {
-            this.transferDialog = { group: null, target: "" };
+            this.transferDialog = { group: null, members: [] };
             this.loadGroupMembers(this.activeChat.id);
           } else alert(r.error);
+        });
+      },
+
+      openRemoveMemberModal(group) {
+        this.removeTargetGroup = group;
+        this.removeMembers = [];
+        this.showRemoveModal = true;
+        this.contextMenu.visible = false;
+        fetch(`/api/groups/${group.id}/members`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.members) {
+              this.removeMembers = data.members.filter(m => m.id != this.userId && m.role !== 'owner');
+            }
+          });
+      },
+
+      removeMemberFromGroup(member) {
+        if (!confirm(`Remove ${member.name} from \"${this.removeTargetGroup.name}\"?`)) return;
+        socket.emit("remove_from_group", { group_id: this.removeTargetGroup.id, target_id: member.id }, (resp) => {
+          if (resp.success) {
+            this.showRemoveModal = false;
+            if (this.activeChat.type === "group") this.loadGroupMembers(this.activeChat.id);
+          } else alert(resp.error);
         });
       },
 
@@ -1224,7 +1321,7 @@ main %}
           },
           text: msg.content,
           time: getRelativeTime(new Date(msg.created_at).getTime()),
-          fromSelf: msg.sender_username === this.username,
+          fromSelf: msg.sender_id == this.userId,
           msg_type: msg.msg_type || 'text',
           reply_to: msg.reply_to || null,
         };
