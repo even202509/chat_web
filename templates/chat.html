@@ -4,7 +4,8 @@ main %}
   <aside
     class="hidden md:flex md:w-1/4 border-r border-slate-200 bg-white/90 p-5 flex-col gap-6"
   >
-    <div class="flex items-center gap-3 rounded-3xl bg-slate-50 p-4">
+    <a :href="'/profile/' + userId"
+       class="flex items-center gap-3 rounded-3xl bg-slate-50 p-4 cursor-pointer hover:bg-slate-100 transition">
       <template v-if="ownAvatarUrl">
         <img :src="ownAvatarUrl" class="h-14 w-14 rounded-3xl object-cover" />
       </template>
@@ -20,7 +21,7 @@ main %}
         </p>
         <p class="text-lg font-semibold text-slate-900">[[ username ]]</p>
       </div>
-    </div>
+    </a>
 
     <div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
       <div class="flex gap-2 rounded-full bg-white p-1 text-sm shadow-sm">
@@ -106,7 +107,10 @@ main %}
             class="relative flex cursor-pointer items-center gap-3 rounded-3xl px-3 py-3 transition"
           >
             <template v-if="friend.avatarUrl">
-              <img :src="friend.avatarUrl" class="h-11 w-11 rounded-3xl object-cover" />
+              <img
+                :src="friend.avatarUrl"
+                class="h-11 w-11 rounded-3xl object-cover"
+              />
             </template>
             <div
               v-else
@@ -171,7 +175,12 @@ main %}
     >
       <span
         class="inline-flex h-10 w-10 items-center justify-center rounded-3xl bg-slate-100 text-slate-700"
-        ><img src="/static/favicon.svg" height="40" width="40" class="rounded-full"/></span>
+        ><img
+          src="/static/favicon.svg"
+          height="40"
+          width="40"
+          class="rounded-full"
+      /></span>
       Global Chat
     </button>
   </aside>
@@ -225,53 +234,107 @@ main %}
               @contextmenu.prevent="openMsgMenu($event, message)"
             >
               <!-- system 消息 -->
-              <div v-if="message.msg_type === 'system'" class="flex justify-center">
-                <span class="text-xs text-slate-400 px-3 py-1">[[ message.text ]]</span>
+              <div
+                v-if="message.msg_type === 'system'"
+                class="flex justify-center"
+              >
+                <span class="text-xs text-slate-400 px-3 py-1"
+                  >[[ message.text ]]</span
+                >
               </div>
 
               <!-- 自己的消息（右侧） -->
-              <div v-else-if="message.fromSelf" class="flex flex-col items-end gap-1 mb-3">
+              <div
+                v-else-if="message.fromSelf"
+                class="flex flex-col items-end gap-1 mb-3"
+              >
                 <div class="flex items-baseline gap-2 mr-1">
-                  <span class="text-[11px] text-slate-400">[[ message.time ]]</span>
+                  <span class="text-[11px] text-slate-400"
+                    >[[ message.time ]]</span
+                  >
                 </div>
                 <div
                   v-if="message.reply_to"
                   class="mr-1 max-w-[85%] cursor-pointer rounded-xl border-l-2 border-sky-400 bg-slate-100 px-3 py-1 text-xs text-slate-500 truncate"
                   @click="scrollToMsg(message.reply_to.id)"
                 >
-                  <span class="font-semibold text-sky-600">[[ message.reply_to.username ]]</span>: [[ message.reply_to.content ]]
+                  <span class="font-semibold text-sky-600"
+                    >[[ message.reply_to.username ]]</span
+                  >: [[ message.reply_to.content ]]
                 </div>
-                <div class="max-w-[80%] rounded-2xl rounded-br-md bg-blue-600 px-4 py-2.5 text-sm leading-relaxed text-white shadow-sm">
+                <div
+                  class="max-w-[80%] rounded-2xl rounded-br-md bg-blue-600 px-4 py-2.5 text-sm leading-relaxed text-white shadow-sm"
+                >
                   <p v-if="message.msg_type === 'text'">[[ message.text ]]</p>
-                  <img v-else-if="message.msg_type === 'image'" :src="message.text" class="max-w-xs rounded-xl cursor-pointer" @click="previewImage(message.text)" loading="lazy" />
-                  <a v-else-if="message.msg_type === 'file'" :href="message.text" target="_blank" class="flex items-center gap-2 underline">📎 [[ message.fileName || 'Download' ]]</a>
+                  <img
+                    v-else-if="message.msg_type === 'image'"
+                    :src="message.text"
+                    class="max-w-xs rounded-xl cursor-pointer"
+                    @click="previewImage(message.text)"
+                    loading="lazy"
+                  />
+                  <a
+                    v-else-if="message.msg_type === 'file'"
+                    :href="message.text"
+                    target="_blank"
+                    class="flex items-center gap-2 underline"
+                    >📎 [[ message.fileName || 'Download' ]]</a
+                  >
                 </div>
               </div>
 
               <!-- 他人的消息（左侧） -->
               <div v-else class="flex items-start gap-2.5 mb-3">
                 <template v-if="message.sender.avatarUrl">
-                  <img :src="message.sender.avatarUrl" @click.stop="openAvatarMenu($event, message.sender)" class="mt-0.5 h-9 w-9 rounded-full object-cover cursor-pointer flex-shrink-0" />
+                  <img
+                    :src="message.sender.avatarUrl"
+                    @click.stop="openAvatarMenu($event, message.sender)"
+                    class="mt-0.5 h-9 w-9 rounded-full object-cover cursor-pointer flex-shrink-0"
+                  />
                 </template>
-                <div v-else @click.stop="openAvatarMenu($event, message.sender)" class="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600 cursor-pointer">
+                <div
+                  v-else
+                  @click.stop="openAvatarMenu($event, message.sender)"
+                  class="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600 cursor-pointer"
+                >
                   [[ message.sender.avatar ]]
                 </div>
                 <div class="flex flex-col min-w-0">
                   <div class="flex items-baseline gap-2 mb-0.5">
-                    <span class="text-sm font-semibold text-slate-800">[[ message.sender.name ]]</span>
-                    <span class="text-[11px] text-slate-400">[[ message.time ]]</span>
+                    <span class="text-sm font-semibold text-slate-800"
+                      >[[ message.sender.name ]]</span
+                    >
+                    <span class="text-[11px] text-slate-400"
+                      >[[ message.time ]]</span
+                    >
                   </div>
                   <div
                     v-if="message.reply_to"
                     class="mb-1 max-w-full cursor-pointer rounded-xl border-l-2 border-sky-400 bg-slate-100 px-3 py-1 text-xs text-slate-500 truncate"
                     @click="scrollToMsg(message.reply_to.id)"
                   >
-                    <span class="font-semibold text-sky-600">[[ message.reply_to.username ]]</span>: [[ message.reply_to.content ]]
+                    <span class="font-semibold text-sky-600"
+                      >[[ message.reply_to.username ]]</span
+                    >: [[ message.reply_to.content ]]
                   </div>
-                  <div class="max-w-[85%] w-fit rounded-2xl rounded-tl-md bg-slate-100 px-4 py-2.5 text-sm leading-relaxed text-slate-800 shadow-sm">
+                  <div
+                    class="max-w-[85%] w-fit rounded-2xl rounded-tl-md bg-slate-100 px-4 py-2.5 text-sm leading-relaxed text-slate-800 shadow-sm"
+                  >
                     <p v-if="message.msg_type === 'text'">[[ message.text ]]</p>
-                    <img v-else-if="message.msg_type === 'image'" :src="message.text" class="max-w-xs rounded-xl cursor-pointer" @click="previewImage(message.text)" loading="lazy" />
-                    <a v-else-if="message.msg_type === 'file'" :href="message.text" target="_blank" class="flex items-center gap-2 underline">📎 [[ message.fileName || 'Download' ]]</a>
+                    <img
+                      v-else-if="message.msg_type === 'image'"
+                      :src="message.text"
+                      class="max-w-xs rounded-xl cursor-pointer"
+                      @click="previewImage(message.text)"
+                      loading="lazy"
+                    />
+                    <a
+                      v-else-if="message.msg_type === 'file'"
+                      :href="message.text"
+                      target="_blank"
+                      class="flex items-center gap-2 underline"
+                      >📎 [[ message.fileName || 'Download' ]]</a
+                    >
                   </div>
                 </div>
               </div>
@@ -304,24 +367,33 @@ main %}
           class="flex items-center gap-2 py-2 border-b border-slate-100 last:border-0"
         >
           <div class="flex-1">
-            <span class="text-sm font-medium text-slate-900">[[ m.alias || m.username ]]</span>
-            <span v-if="m.alias" class="text-xs text-slate-400 ml-1">(@[[ m.username ]])</span>
+            <span class="text-sm font-medium text-slate-900"
+              >[[ m.alias || m.username ]]</span
+            >
+            <span v-if="m.alias" class="text-xs text-slate-400 ml-1"
+              >(@[[ m.username ]])</span
+            >
             <span
               class="ml-2 text-[10px] px-1.5 py-0.5 rounded-full"
               :class="m.role === 'owner' ? 'bg-amber-100 text-amber-700' : m.role === 'admin' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-600'"
-            >[[ m.role ]]</span>
+              >[[ m.role ]]</span
+            >
           </div>
           <template v-if="isGroupOwner(activeChat.id) && m.id != userId">
             <button
               v-if="m.role === 'member'"
               @click="promoteToAdmin(activeChat.id, m.id)"
               class="rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700 hover:bg-blue-200"
-            >Promote</button>
+            >
+              Promote
+            </button>
             <button
               v-else-if="m.role === 'admin'"
               @click="demoteFromAdmin(activeChat.id, m.id)"
               class="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700 hover:bg-amber-200"
-            >Demote</button>
+            >
+              Demote
+            </button>
           </template>
         </div>
         <!-- 群昵称 -->
@@ -338,7 +410,9 @@ main %}
             <button
               @click="setMyAlias(activeChat.id)"
               class="rounded-xl bg-sky-600 px-3 py-1 text-xs text-white hover:bg-sky-700"
-            >Save</button>
+            >
+              Save
+            </button>
           </div>
         </div>
       </div>
@@ -349,9 +423,18 @@ main %}
       v-if="replyTarget"
       class="flex items-center gap-2 border-t border-slate-200 bg-sky-50 px-4 py-2"
     >
-      <span class="text-xs text-sky-600">Replying to [[ replyTarget.sender.name ]]</span>
-      <span class="flex-1 text-xs text-slate-500 truncate">[[ replyTarget.text ]]</span>
-      <button @click="cancelReply" class="text-slate-400 hover:text-slate-600 text-sm">&times;</button>
+      <span class="text-xs text-sky-600"
+        >Replying to [[ replyTarget.sender.name ]]</span
+      >
+      <span class="flex-1 text-xs text-slate-500 truncate"
+        >[[ replyTarget.text ]]</span
+      >
+      <button
+        @click="cancelReply"
+        class="text-slate-400 hover:text-slate-600 text-sm"
+      >
+        &times;
+      </button>
     </div>
 
     <form
@@ -373,7 +456,19 @@ main %}
           class="inline-flex items-center justify-center rounded-3xl border border-slate-300 px-4 py-3 text-sm text-slate-500 hover:bg-slate-100"
           title="Upload image or file"
         >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+          <svg
+            class="w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
+            />
+          </svg>
         </button>
         <input
           v-model="messageInput"
@@ -457,7 +552,10 @@ main %}
           class="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left hover:bg-slate-100"
         >
           <template v-if="friend.avatarUrl">
-            <img :src="friend.avatarUrl" class="h-9 w-9 rounded-2xl object-cover" />
+            <img
+              :src="friend.avatarUrl"
+              class="h-9 w-9 rounded-2xl object-cover"
+            />
           </template>
           <div
             v-else
@@ -492,20 +590,29 @@ main %}
       :style="`top: ${contextMenu.y}px; left: ${contextMenu.x}px; min-width: 200px;`"
     >
       <button
+        v-if="contextMenu.type === 'private'"
+        type="button"
+        class="w-full rounded-2xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+        @click="viewProfile(contextMenu.item)"
+      >
+        View Profile
+      </button>
+      <button
         type="button"
         class="w-full rounded-2xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
         @click="clearHistory"
       >
         Clear History
       </button>
-      <button
-        v-if="contextMenu.type === 'private'"
-        type="button"
-        class="w-full rounded-2xl px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
-        @click="removeFriend(contextMenu.item)"
-      >
-        Remove Friend
-      </button>
+      <template v-if="contextMenu.type === 'private'">
+        <button
+          type="button"
+          class="w-full rounded-2xl px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+          @click="removeFriend(contextMenu.item)"
+        >
+          Remove Friend
+        </button>
+      </template>
       <template v-if="contextMenu.type === 'group'">
         <button
           type="button"
@@ -608,7 +715,10 @@ main %}
     >
       <div class="mb-3 flex items-center gap-3">
         <template v-if="avatarMenu.user?.avatarUrl">
-          <img :src="avatarMenu.user.avatarUrl" class="h-12 w-12 rounded-3xl object-cover" />
+          <img
+            :src="avatarMenu.user.avatarUrl"
+            class="h-12 w-12 rounded-3xl object-cover"
+          />
         </template>
         <div
           v-else
@@ -649,9 +759,16 @@ main %}
   >
     <div class="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
       <h2 class="text-lg font-semibold text-slate-900">Transfer Ownership</h2>
-      <p class="mt-1 text-sm text-slate-500">Select a member to transfer [[ transferDialog.group.name ]]</p>
+      <p class="mt-1 text-sm text-slate-500">
+        Select a member to transfer [[ transferDialog.group.name ]]
+      </p>
       <div class="mt-4 max-h-60 space-y-1 overflow-y-auto">
-        <div v-if="transferDialog.members.length === 0" class="py-4 text-center text-sm text-slate-400">Loading members...</div>
+        <div
+          v-if="transferDialog.members.length === 0"
+          class="py-4 text-center text-sm text-slate-400"
+        >
+          Loading members...
+        </div>
         <button
           v-for="m in transferDialog.members"
           :key="'tr-' + m.id"
@@ -662,17 +779,28 @@ main %}
           <template v-if="m.avatar_url">
             <img :src="m.avatar_url" class="h-9 w-9 rounded-2xl object-cover" />
           </template>
-          <div v-else class="flex h-9 w-9 items-center justify-center rounded-2xl bg-sky-100 text-sm font-semibold text-sky-700">
+          <div
+            v-else
+            class="flex h-9 w-9 items-center justify-center rounded-2xl bg-sky-100 text-sm font-semibold text-sky-700"
+          >
             [[ (m.alias || m.username).charAt(0).toUpperCase() ]]
           </div>
           <div>
-            <p class="text-sm font-medium text-slate-900">[[ m.alias || m.username ]]</p>
+            <p class="text-sm font-medium text-slate-900">
+              [[ m.alias || m.username ]]
+            </p>
             <p class="text-xs text-slate-400">[[ m.role ]]</p>
           </div>
         </button>
       </div>
       <div class="mt-4 flex justify-end">
-        <button type="button" @click="transferDialog.group = null; transferDialog.members = []" class="rounded-2xl px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">Close</button>
+        <button
+          type="button"
+          @click="transferDialog.group = null; transferDialog.members = []"
+          class="rounded-2xl px-4 py-2 text-sm text-slate-600 hover:bg-slate-100"
+        >
+          Close
+        </button>
       </div>
     </div>
   </div>
@@ -685,9 +813,16 @@ main %}
   >
     <div class="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
       <h2 class="text-lg font-semibold text-slate-900">Remove Member</h2>
-      <p class="mt-1 text-sm text-slate-500">Select a member to remove from [[ removeTargetGroup?.name ]]</p>
+      <p class="mt-1 text-sm text-slate-500">
+        Select a member to remove from [[ removeTargetGroup?.name ]]
+      </p>
       <div class="mt-4 max-h-60 space-y-1 overflow-y-auto">
-        <div v-if="removeMembers.length === 0" class="py-4 text-center text-sm text-slate-400">Loading members...</div>
+        <div
+          v-if="removeMembers.length === 0"
+          class="py-4 text-center text-sm text-slate-400"
+        >
+          Loading members...
+        </div>
         <button
           v-for="m in removeMembers"
           :key="'rm-' + m.id"
@@ -698,17 +833,28 @@ main %}
           <template v-if="m.avatar_url">
             <img :src="m.avatar_url" class="h-9 w-9 rounded-2xl object-cover" />
           </template>
-          <div v-else class="flex h-9 w-9 items-center justify-center rounded-2xl bg-sky-100 text-sm font-semibold text-sky-700">
+          <div
+            v-else
+            class="flex h-9 w-9 items-center justify-center rounded-2xl bg-sky-100 text-sm font-semibold text-sky-700"
+          >
             [[ (m.alias || m.username).charAt(0).toUpperCase() ]]
           </div>
           <div>
-            <p class="text-sm font-medium text-slate-900">[[ m.alias || m.username ]]</p>
+            <p class="text-sm font-medium text-slate-900">
+              [[ m.alias || m.username ]]
+            </p>
             <p class="text-xs text-slate-400">[[ m.role ]]</p>
           </div>
         </button>
       </div>
       <div class="mt-4 flex justify-end">
-        <button type="button" @click="showRemoveModal = false" class="rounded-2xl px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">Close</button>
+        <button
+          type="button"
+          @click="showRemoveModal = false"
+          class="rounded-2xl px-4 py-2 text-sm text-slate-600 hover:bg-slate-100"
+        >
+          Close
+        </button>
       </div>
     </div>
   </div>
@@ -719,7 +865,10 @@ main %}
     @click="imagePreview = null"
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
   >
-    <img :src="imagePreview" class="max-w-[90vw] max-h-[90vh] rounded-xl shadow-2xl" />
+    <img
+      :src="imagePreview"
+      class="max-w-[90vw] max-h-[90vh] rounded-xl shadow-2xl"
+    />
   </div>
 
   <!-- Toast notification -->
@@ -788,7 +937,9 @@ main %}
             name: u.name,
             avatar: u.avatar,
             avatarUrl: u.avatarUrl || "",
-            status: this.activeUsers.some((ou) => ou.user_id == u.id) ? "Online" : "Offline",
+            status: this.activeUsers.some((ou) => ou.user_id == u.id)
+              ? "Online"
+              : "Offline",
             unread: this.unreadCounts[u.id] || 0,
           }));
       },
@@ -815,11 +966,11 @@ main %}
             this.allUsers = data.users || [];
             this.friendStates = data.friendStates || {};
             const params = new URLSearchParams(window.location.search);
-            const chatId = params.get('chat');
+            const chatId = params.get("chat");
             if (chatId) {
-              const target = (data.users || []).find(u => u.id == chatId);
-              if (target && data.friendStates[chatId] === 'chat') {
-                this.selectChat(target, 'private');
+              const target = (data.users || []).find((u) => u.id == chatId);
+              if (target && data.friendStates[chatId] === "chat") {
+                this.selectChat(target, "private");
               }
             }
           }
@@ -831,54 +982,79 @@ main %}
           if (data.messages) {
             this.globalMessages = data.messages.map((msg) => ({
               id: msg.id || `global-${Math.random()}`,
-              sender: { id: msg.from_id, name: msg.from, avatar: msg.from.charAt(0).toUpperCase(), avatarUrl: msg.avatar_url || "" },
+              sender: {
+                id: msg.from_id,
+                name: msg.from,
+                avatar: msg.from.charAt(0).toUpperCase(),
+                avatarUrl: msg.avatar_url || "",
+              },
               text: msg.text,
               time: getRelativeTime(new Date(msg.created_at).getTime()),
               fromSelf: msg.from === this.username,
-              msg_type: msg.msg_type || 'text',
+              msg_type: msg.msg_type || "text",
               reply_to: msg.reply_to || null,
             }));
             this.messages = this.globalMessages;
           }
         });
 
-      fetch("/api/unread_counts").then((r) => r.json()).then((data) => {
-        if (data.unread) this.unreadCounts = data.unread;
-      });
+      fetch("/api/unread_counts")
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.unread) this.unreadCounts = data.unread;
+        });
 
       // === Socket 事件 ===
 
       socket.on("global_message", (data) => {
         const msg = {
           id: data.id || `global-${Date.now()}-${Math.random()}`,
-          sender: { id: data.from_id, name: data.from, avatar: data.from.charAt(0).toUpperCase(), avatarUrl: data.avatar_url || "" },
-          text: data.text, time: getRelativeTime(Date.now()),
-          fromSelf: data.from === this.username, msg_type: data.msg_type || 'text', reply_to: data.reply_to || null,
+          sender: {
+            id: data.from_id,
+            name: data.from,
+            avatar: data.from.charAt(0).toUpperCase(),
+            avatarUrl: data.avatar_url || "",
+          },
+          text: data.text,
+          time: getRelativeTime(Date.now()),
+          fromSelf: data.from === this.username,
+          msg_type: data.msg_type || "text",
+          reply_to: data.reply_to || null,
         };
         this.globalMessages.push(msg);
         if (this.globalMessages.length > 50) this.globalMessages.shift();
-        if (this.activeChat.type === "global") this.messages = this.globalMessages;
+        if (this.activeChat.type === "global")
+          this.messages = this.globalMessages;
       });
 
       socket.on("private_message", (data) => {
         const msg = this.buildMessage(data);
-        if (this.activeChat.type === "private" && this.activeChat.id == data.from_id) {
+        if (
+          this.activeChat.type === "private" &&
+          this.activeChat.id == data.from_id
+        ) {
           this.messages.push(msg);
-          if (this.messages.length > 200) this.messages.splice(0, this.messages.length - 200);
+          if (this.messages.length > 200)
+            this.messages.splice(0, this.messages.length - 200);
           this.$nextTick(() => this.scrollToBottom());
         } else {
-          this.unreadCounts[data.from_id] = (this.unreadCounts[data.from_id] || 0) + 1;
+          this.unreadCounts[data.from_id] =
+            (this.unreadCounts[data.from_id] || 0) + 1;
           this.unreadCounts = { ...this.unreadCounts };
         }
       });
 
       socket.on("group_message", (data) => {
         const msg = this.buildGroupMessage(data);
-        if (this.activeChat.type === "group" && this.activeChat.id == data.group_id) {
-          if (this.messages.length > 200) this.messages.splice(0, this.messages.length - 200);
+        if (
+          this.activeChat.type === "group" &&
+          this.activeChat.id == data.group_id
+        ) {
+          if (this.messages.length > 200)
+            this.messages.splice(0, this.messages.length - 200);
           this.messages.push(msg);
           this.$nextTick(() => this.scrollToBottom());
-        } else if (data.msg_type !== 'system') {
+        } else if (data.msg_type !== "system") {
           const key = `g:${data.group_id}`;
           this.unreadCounts[key] = (this.unreadCounts[key] || 0) + 1;
           this.unreadCounts = { ...this.unreadCounts };
@@ -887,27 +1063,40 @@ main %}
 
       socket.on("mentioned_in_group", (data) => {
         if (data.group_id != this.activeChat.id) {
-          this.showToast(`@${data.from_name} mentioned you in ${data.group_name}`);
+          this.showToast(
+            `@${data.from_name} mentioned you in ${data.group_name}`,
+          );
         }
       });
 
       socket.on("message_deleted", (data) => {
-        this.messages = this.messages.filter((m) => !String(m.id).endsWith(`-${data.message_id}`) && m.id !== `private-${data.message_id}` && m.id !== `group-${data.message_id}`);
-        this.globalMessages = this.globalMessages.filter((m) => !String(m.id).endsWith(`-${data.message_id}`));
-        if (this.activeChat.type === "global") this.messages = this.globalMessages;
+        this.messages = this.messages.filter(
+          (m) =>
+            !String(m.id).endsWith(`-${data.message_id}`) &&
+            m.id !== `private-${data.message_id}` &&
+            m.id !== `group-${data.message_id}`,
+        );
+        this.globalMessages = this.globalMessages.filter(
+          (m) => !String(m.id).endsWith(`-${data.message_id}`),
+        );
+        if (this.activeChat.type === "global")
+          this.messages = this.globalMessages;
       });
 
       socket.on("admin_promoted", (data) => {
-        if (this.activeChat.type === "group" && this.activeChat.id == data.id) this.loadGroupMembers(data.id);
+        if (this.activeChat.type === "group" && this.activeChat.id == data.id)
+          this.loadGroupMembers(data.id);
       });
       socket.on("admin_demoted", (data) => {
-        if (this.activeChat.type === "group" && this.activeChat.id == data.id) this.loadGroupMembers(data.id);
+        if (this.activeChat.type === "group" && this.activeChat.id == data.id)
+          this.loadGroupMembers(data.id);
       });
 
       socket.on("ownership_transferred", (data) => {
         const g = this.groups.find((g) => g.id == data.id);
         if (g) g.creator_id = data.new_creator_id;
-        if (this.activeChat.type === "group" && this.activeChat.id == data.id) this.loadGroupMembers(data.id);
+        if (this.activeChat.type === "group" && this.activeChat.id == data.id)
+          this.loadGroupMembers(data.id);
       });
 
       socket.on("account_deactivated", () => {
@@ -916,13 +1105,20 @@ main %}
       });
 
       socket.on("friend_add", (data) => {
-        if (!this.allUsers.some(u => u.id == data.userId)) {
-          this.allUsers.push({ id: data.userId, name: data.userName, avatar: data.userName.charAt(0).toUpperCase(), avatarUrl: data.avatarUrl || "" });
+        if (!this.allUsers.some((u) => u.id == data.userId)) {
+          this.allUsers.push({
+            id: data.userId,
+            name: data.userName,
+            avatar: data.userName.charAt(0).toUpperCase(),
+            avatarUrl: data.avatarUrl || "",
+          });
         }
         this.friendStates[data.userId] = "incoming";
       });
 
-      socket.on("friend_accept", (data) => { this.friendStates[data.userId] = "chat"; });
+      socket.on("friend_accept", (data) => {
+        this.friendStates[data.userId] = "chat";
+      });
 
       socket.on("friend_rejected", (data) => {
         this.friendStates[data.userId] = "add";
@@ -934,16 +1130,24 @@ main %}
         this.allUsers = this.allUsers.filter((u) => u.id !== data.userId);
       });
 
-      fetch("/api/groups").then((r) => r.json()).then((data) => {
-        if (data.groups) {
-          this.groups = data.groups;
-          this.groups.forEach((g) => socket.emit("join_group", g.id));
-        }
-      });
+      fetch("/api/groups")
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.groups) {
+            this.groups = data.groups;
+            this.groups.forEach((g) => socket.emit("join_group", g.id));
+          }
+        });
 
       socket.on("added_to_group", (data) => {
-        if (!this.groups.some(g => g.id == data.id)) {
-          this.groups.push({ id: data.id, name: data.name, avatar: data.avatar, members: data.members, creator_id: data.creator_id });
+        if (!this.groups.some((g) => g.id == data.id)) {
+          this.groups.push({
+            id: data.id,
+            name: data.name,
+            avatar: data.avatar,
+            members: data.members,
+            creator_id: data.creator_id,
+          });
         }
         socket.emit("join_group", data.id);
       });
@@ -971,18 +1175,27 @@ main %}
       if (this._scrollEl) {
         this._onScroll = () => {
           const el = this._scrollEl;
-          if (el && el.scrollTop <= 50 && this.hasMoreMessages && !this.loadingMore) {
+          if (
+            el &&
+            el.scrollTop <= 50 &&
+            this.hasMoreMessages &&
+            !this.loadingMore
+          ) {
             this.loadMoreMessages();
           }
         };
-        this._scrollEl.addEventListener("scroll", this._onScroll, { passive: true });
+        this._scrollEl.addEventListener("scroll", this._onScroll, {
+          passive: true,
+        });
       }
     },
 
     beforeUnmount() {
       if (this._toastTimer) clearTimeout(this._toastTimer);
-      if (this._scrollEl && this._onScroll) this._scrollEl.removeEventListener("scroll", this._onScroll);
-      this._scrollEl = null; this._onScroll = null;
+      if (this._scrollEl && this._onScroll)
+        this._scrollEl.removeEventListener("scroll", this._onScroll);
+      this._scrollEl = null;
+      this._onScroll = null;
       socket.off();
     },
 
@@ -991,11 +1204,18 @@ main %}
       buildMessage(data) {
         return {
           id: `private-${data.id || Date.now()}`,
-          sender: { id: data.from_id, name: data.from, avatar: data.from.charAt(0).toUpperCase(), avatarUrl: data.avatar_url || "" },
-          text: data.text || data.content || '',
-          time: getRelativeTime(data.created_at ? new Date(data.created_at).getTime() : Date.now()),
+          sender: {
+            id: data.from_id,
+            name: data.from,
+            avatar: data.from.charAt(0).toUpperCase(),
+            avatarUrl: data.avatar_url || "",
+          },
+          text: data.text || data.content || "",
+          time: getRelativeTime(
+            data.created_at ? new Date(data.created_at).getTime() : Date.now(),
+          ),
           fromSelf: data.from === this.username || data.from_id == this.userId,
-          msg_type: data.msg_type || 'text',
+          msg_type: data.msg_type || "text",
           reply_to: data.reply_to || null,
           fileName: data.fileName || null,
         };
@@ -1004,11 +1224,17 @@ main %}
       buildGroupMessage(data) {
         return {
           id: `group-${data.id || Date.now()}`,
-          sender: { name: data.from, avatar: (data.from || '?').charAt(0).toUpperCase(), avatarUrl: data.avatar_url || "" },
-          text: data.text || data.content || '',
-          time: getRelativeTime(data.created_at ? new Date(data.created_at).getTime() : Date.now()),
+          sender: {
+            name: data.from,
+            avatar: (data.from || "?").charAt(0).toUpperCase(),
+            avatarUrl: data.avatar_url || "",
+          },
+          text: data.text || data.content || "",
+          time: getRelativeTime(
+            data.created_at ? new Date(data.created_at).getTime() : Date.now(),
+          ),
           fromSelf: data.from === this.username || data.from_id == this.userId,
-          msg_type: data.msg_type || 'text',
+          msg_type: data.msg_type || "text",
           reply_to: data.reply_to || null,
           fileName: data.fileName || null,
         };
@@ -1017,12 +1243,12 @@ main %}
       // === 群成员 ===
       loadGroupMembers(groupId) {
         fetch(`/api/groups/${groupId}/members`)
-          .then(r => r.json())
-          .then(data => {
+          .then((r) => r.json())
+          .then((data) => {
             if (data.members) {
               this.groupMembers = data.members;
-              const me = data.members.find(m => m.id == this.userId);
-              if (me) this.myAlias = me.alias || '';
+              const me = data.members.find((m) => m.id == this.userId);
+              if (me) this.myAlias = me.alias || "";
             }
           });
       },
@@ -1033,14 +1259,14 @@ main %}
       },
 
       isGroupOwner(groupId) {
-        const g = this.groups.find(x => x.id == groupId);
+        const g = this.groups.find((x) => x.id == groupId);
         return g && g.creator_id == this.userId;
       },
 
       isGroupAdmin(groupId) {
         if (this.isGroupOwner(groupId)) return true;
-        const m = this.groupMembers.find(x => x.id == this.userId);
-        return m && (m.role === 'admin' || m.role === 'owner');
+        const m = this.groupMembers.find((x) => x.id == this.userId);
+        return m && (m.role === "admin" || m.role === "owner");
       },
 
       groupUnread(groupId) {
@@ -1048,46 +1274,69 @@ main %}
       },
 
       promoteToAdmin(groupId, targetId) {
-        socket.emit("promote_to_admin", { group_id: groupId, target_id: targetId }, (r) => {
-          if (r.success) this.loadGroupMembers(groupId);
-          else alert(r.error);
-        });
+        socket.emit(
+          "promote_to_admin",
+          { group_id: groupId, target_id: targetId },
+          (r) => {
+            if (r.success) this.loadGroupMembers(groupId);
+            else alert(r.error);
+          },
+        );
       },
 
       demoteFromAdmin(groupId, targetId) {
-        socket.emit("demote_from_admin", { group_id: groupId, target_id: targetId }, (r) => {
-          if (r.success) this.loadGroupMembers(groupId);
-          else alert(r.error);
-        });
+        socket.emit(
+          "demote_from_admin",
+          { group_id: groupId, target_id: targetId },
+          (r) => {
+            if (r.success) this.loadGroupMembers(groupId);
+            else alert(r.error);
+          },
+        );
       },
 
       setMyAlias(groupId) {
-        socket.emit("set_group_alias", { group_id: groupId, alias: this.myAlias }, (r) => {
-          if (r.success) this.loadGroupMembers(groupId);
-          else alert(r.error);
-        });
+        socket.emit(
+          "set_group_alias",
+          { group_id: groupId, alias: this.myAlias },
+          (r) => {
+            if (r.success) this.loadGroupMembers(groupId);
+            else alert(r.error);
+          },
+        );
       },
 
       showTransferDialog(group) {
         this.transferDialog = { group, members: [] };
         this.contextMenu.visible = false;
         fetch(`/api/groups/${group.id}/members`)
-          .then(r => r.json())
-          .then(data => {
+          .then((r) => r.json())
+          .then((data) => {
             if (data.members) {
-              this.transferDialog.members = data.members.filter(m => m.id != this.userId);
+              this.transferDialog.members = data.members.filter(
+                (m) => m.id != this.userId,
+              );
             }
           });
       },
 
       doTransferOwnership(member) {
-        if (!confirm(`Transfer ownership of \"${this.transferDialog.group.name}\" to ${member.name}?`)) return;
-        socket.emit("transfer_ownership", { group_id: this.transferDialog.group.id, target_id: member.id }, (r) => {
-          if (r.success) {
-            this.transferDialog = { group: null, members: [] };
-            this.loadGroupMembers(this.activeChat.id);
-          } else alert(r.error);
-        });
+        if (
+          !confirm(
+            `Transfer ownership of \"${this.transferDialog.group.name}\" to ${member.name}?`,
+          )
+        )
+          return;
+        socket.emit(
+          "transfer_ownership",
+          { group_id: this.transferDialog.group.id, target_id: member.id },
+          (r) => {
+            if (r.success) {
+              this.transferDialog = { group: null, members: [] };
+              this.loadGroupMembers(this.activeChat.id);
+            } else alert(r.error);
+          },
+        );
       },
 
       openRemoveMemberModal(group) {
@@ -1096,22 +1345,34 @@ main %}
         this.showRemoveModal = true;
         this.contextMenu.visible = false;
         fetch(`/api/groups/${group.id}/members`)
-          .then(r => r.json())
-          .then(data => {
+          .then((r) => r.json())
+          .then((data) => {
             if (data.members) {
-              this.removeMembers = data.members.filter(m => m.id != this.userId && m.role !== 'owner');
+              this.removeMembers = data.members.filter(
+                (m) => m.id != this.userId && m.role !== "owner",
+              );
             }
           });
       },
 
       removeMemberFromGroup(member) {
-        if (!confirm(`Remove ${member.name} from \"${this.removeTargetGroup.name}\"?`)) return;
-        socket.emit("remove_from_group", { group_id: this.removeTargetGroup.id, target_id: member.id }, (resp) => {
-          if (resp.success) {
-            this.showRemoveModal = false;
-            if (this.activeChat.type === "group") this.loadGroupMembers(this.activeChat.id);
-          } else alert(resp.error);
-        });
+        if (
+          !confirm(
+            `Remove ${member.name} from \"${this.removeTargetGroup.name}\"?`,
+          )
+        )
+          return;
+        socket.emit(
+          "remove_from_group",
+          { group_id: this.removeTargetGroup.id, target_id: member.id },
+          (resp) => {
+            if (resp.success) {
+              this.showRemoveModal = false;
+              if (this.activeChat.type === "group")
+                this.loadGroupMembers(this.activeChat.id);
+            } else alert(resp.error);
+          },
+        );
       },
 
       // === 回复 ===
@@ -1120,11 +1381,13 @@ main %}
         this.msgMenu.visible = false;
       },
 
-      cancelReply() { this.replyTarget = null; },
+      cancelReply() {
+        this.replyTarget = null;
+      },
 
       scrollToMsg(msgId) {
         const el = document.getElementById(`msg-${msgId}`);
-        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
       },
 
       // === 消息删除 ===
@@ -1138,23 +1401,31 @@ main %}
       },
 
       deleteMessage(msg) {
-        const id = String(msg.id).replace(/^(private|group)-/, '');
-        socket.emit("delete_message", { message_id: parseInt(id) || id }, (r) => {
-          this.msgMenu.visible = false;
-          if (r.success) {
-            this.messages = this.messages.filter(m => m.id !== msg.id);
-          } else alert(r.error);
-        });
+        const id = String(msg.id).replace(/^(private|group)-/, "");
+        socket.emit(
+          "delete_message",
+          { message_id: parseInt(id) || id },
+          (r) => {
+            this.msgMenu.visible = false;
+            if (r.success) {
+              this.messages = this.messages.filter((m) => m.id !== msg.id);
+            } else alert(r.error);
+          },
+        );
       },
 
       deleteMessageForMe(msg) {
-        const id = String(msg.id).replace(/^(private|group)-/, '');
-        socket.emit("delete_message_for_me", { message_id: parseInt(id) || id }, (r) => {
-          this.msgMenu.visible = false;
-          if (r.success) {
-            this.messages = this.messages.filter(m => m.id !== msg.id);
-          }
-        });
+        const id = String(msg.id).replace(/^(private|group)-/, "");
+        socket.emit(
+          "delete_message_for_me",
+          { message_id: parseInt(id) || id },
+          (r) => {
+            this.msgMenu.visible = false;
+            if (r.success) {
+              this.messages = this.messages.filter((m) => m.id !== msg.id);
+            }
+          },
+        );
       },
 
       // === 文件上传 ===
@@ -1162,20 +1433,23 @@ main %}
         const file = e.target.files[0];
         if (!file) return;
         const formData = new FormData();
-        formData.append('file', file);
+        formData.append("file", file);
         try {
-          const resp = await fetch('/api/upload', { method: 'POST', body: formData });
+          const resp = await fetch("/api/upload", {
+            method: "POST",
+            body: formData,
+          });
           const data = await resp.json();
           if (data.url) {
-            const isImage = file.type.startsWith('image/');
-            this.sendMessage(isImage ? 'image' : 'file', data.url, file.name);
+            const isImage = file.type.startsWith("image/");
+            this.sendMessage(isImage ? "image" : "file", data.url, file.name);
           } else {
-            alert(data.error || 'Upload failed');
+            alert(data.error || "Upload failed");
           }
         } catch (err) {
-          alert('Upload error');
+          alert("Upload error");
         }
-        e.target.value = '';
+        e.target.value = "";
       },
 
       previewImage(url) {
@@ -1185,19 +1459,29 @@ main %}
       showToast(msg) {
         this.toast = msg;
         if (this._toastTimer) clearTimeout(this._toastTimer);
-        this._toastTimer = setTimeout(() => { this.toast = null; this._toastTimer = null; }, 3000);
+        this._toastTimer = setTimeout(() => {
+          this.toast = null;
+          this._toastTimer = null;
+        }, 3000);
       },
 
       // === 原有方法 ===
       addFriend(user) {
         this.friendStates[user.id] = "pending";
-        if (!this.allUsers.some(u => u.id == user.id)) {
-          this.allUsers.push({ id: user.id, name: user.name, avatar: user.avatar });
+        if (!this.allUsers.some((u) => u.id == user.id)) {
+          this.allUsers.push({
+            id: user.id,
+            name: user.name,
+            avatar: user.avatar,
+          });
         }
         socket.emit("friend_add", { from: user.id });
       },
 
-      acceptFriend(user) { this.friendStates[user.id] = "chat"; socket.emit("friend_accept", { from: user.id }); },
+      acceptFriend(user) {
+        this.friendStates[user.id] = "chat";
+        socket.emit("friend_accept", { from: user.id });
+      },
 
       rejectFriend(user) {
         this.friendStates[user.id] = "add";
@@ -1213,8 +1497,16 @@ main %}
         this.contextMenu.visible = false;
       },
 
-      incomingRequests() { return this.allUsers.filter((u) => this.friendStates[u.id] === "incoming"); },
-      outgoingRequests() { return this.allUsers.filter((u) => this.friendStates[u.id] === "pending"); },
+      incomingRequests() {
+        return this.allUsers.filter(
+          (u) => this.friendStates[u.id] === "incoming",
+        );
+      },
+      outgoingRequests() {
+        return this.allUsers.filter(
+          (u) => this.friendStates[u.id] === "pending",
+        );
+      },
 
       createGroup() {
         const name = this.newGroupName.trim();
@@ -1236,22 +1528,36 @@ main %}
       },
 
       inviteToGroup(friend) {
-        socket.emit("invite_to_group", { group_id: this.inviteTargetGroup.id, user_id: friend.id }, (resp) => {
-          if (resp.error) alert(resp.error);
-          else this.showInviteModal = false;
-        });
+        socket.emit(
+          "invite_to_group",
+          { group_id: this.inviteTargetGroup.id, user_id: friend.id },
+          (resp) => {
+            if (resp.error) alert(resp.error);
+            else this.showInviteModal = false;
+          },
+        );
       },
 
       leaveGroup(group) {
         if (!confirm(`Leave group "${group.name}"?`)) return;
-        socket.emit("remove_from_group", { group_id: group.id, target_id: Number(this.userId) }, (resp) => {
-          if (resp.success) {
-            this.groups = this.groups.filter((g) => g.id !== group.id);
-            if (this.activeChat.type === "group" && this.activeChat.id == group.id) {
-              this.selectChat({ id: "global", title: "Global Chat" }, "global");
+        socket.emit(
+          "remove_from_group",
+          { group_id: group.id, target_id: Number(this.userId) },
+          (resp) => {
+            if (resp.success) {
+              this.groups = this.groups.filter((g) => g.id !== group.id);
+              if (
+                this.activeChat.type === "group" &&
+                this.activeChat.id == group.id
+              ) {
+                this.selectChat(
+                  { id: "global", title: "Global Chat" },
+                  "global",
+                );
+              }
             }
-          }
-        });
+          },
+        );
         this.contextMenu.visible = false;
       },
 
@@ -1260,7 +1566,10 @@ main %}
         socket.emit("delete_group", { group_id: group.id }, (resp) => {
           if (resp.success) {
             this.groups = this.groups.filter((g) => g.id !== group.id);
-            if (this.activeChat.type === "group" && this.activeChat.id == group.id) {
+            if (
+              this.activeChat.type === "group" &&
+              this.activeChat.id == group.id
+            ) {
               this.selectChat({ id: "global", title: "Global Chat" }, "global");
             }
           }
@@ -1268,18 +1577,33 @@ main %}
         this.contextMenu.visible = false;
       },
 
-      setSidebarTab(tab) { this.sidebarTab = tab; },
+      setSidebarTab(tab) {
+        this.sidebarTab = tab;
+      },
 
       openContextMenu(event, item, type) {
-        this.contextMenu = { visible: true, x: event.clientX, y: event.clientY, item, type };
+        this.contextMenu = {
+          visible: true,
+          x: event.clientX,
+          y: event.clientY,
+          item,
+          type,
+        };
       },
 
       openAvatarMenu(event, user) {
         if (this.activeChat.type === "private") return;
-        this.avatarMenu = { visible: true, x: event.clientX, y: event.clientY, user };
+        this.avatarMenu = {
+          visible: true,
+          x: event.clientX,
+          y: event.clientY,
+          user,
+        };
       },
 
-      closeAvatarMenu() { this.avatarMenu.visible = false; },
+      closeAvatarMenu() {
+        this.avatarMenu.visible = false;
+      },
 
       friendButtonText(user) {
         const state = this.friendStates[user.id] || "add";
@@ -1288,17 +1612,27 @@ main %}
         return "Add Friend";
       },
 
-      viewProfile(user) { this.avatarMenu.visible = false; window.location.href = `/profile/${user.id || user.sender?.id}`; },
+      viewProfile(user) {
+        this.avatarMenu.visible = false;
+        window.location.href = `/profile/${user.id || user.sender?.id}`;
+      },
 
       handleFriendAction(user) {
         const state = this.friendStates[user.id] || "add";
         if (state === "add") this.addFriend(user);
-        else if (state === "chat") { this.selectChat(user, "private"); this.avatarMenu.visible = false; }
+        else if (state === "chat") {
+          this.selectChat(user, "private");
+          this.avatarMenu.visible = false;
+        }
       },
 
       selectChat(item, type) {
         if (type === "private" && this.friendStates[item.id] !== "chat") return;
-        this.activeChat = { type, id: item.id, title: type === "global" ? "Global Chat" : item.name };
+        this.activeChat = {
+          type,
+          id: item.id,
+          title: type === "global" ? "Global Chat" : item.name,
+        };
         this.replyTarget = null;
         this.showMembers = false;
         this.msgMenu.visible = false;
@@ -1311,10 +1645,12 @@ main %}
           this.unreadCounts = { ...this.unreadCounts };
           socket.emit("mark_read", { from_id: item.id });
           fetch(`/api/private_messages/${item.id}`)
-            .then(r => r.json())
-            .then(data => {
+            .then((r) => r.json())
+            .then((data) => {
               if (data.error) return;
-              this.messages = data.messages.map(msg => this.buildApiMessage(msg, 'private'));
+              this.messages = data.messages.map((msg) =>
+                this.buildApiMessage(msg, "private"),
+              );
               this.hasMoreMessages = data.has_more === true;
               this.$nextTick(() => this.scrollToBottom());
             });
@@ -1325,10 +1661,12 @@ main %}
           this.unreadCounts = { ...this.unreadCounts };
           socket.emit("mark_read", { group_id: item.id });
           fetch(`/api/group_messages/${item.id}`)
-            .then(r => r.json())
-            .then(data => {
+            .then((r) => r.json())
+            .then((data) => {
               if (data.error) return;
-              this.messages = data.messages.map(msg => this.buildApiMessage(msg, 'group'));
+              this.messages = data.messages.map((msg) =>
+                this.buildApiMessage(msg, "group"),
+              );
               this.hasMoreMessages = data.has_more === true;
               this.$nextTick(() => this.scrollToBottom());
             });
@@ -1342,54 +1680,82 @@ main %}
           id: `${prefix}-${msg.id}`,
           sender: {
             id: msg.sender_id,
-            name: msg.sender_username || 'System',
-            avatar: (msg.sender_username || '?').charAt(0).toUpperCase(),
+            name: msg.sender_username || "System",
+            avatar: (msg.sender_username || "?").charAt(0).toUpperCase(),
             avatarUrl: msg.avatar_url || "",
           },
           text: msg.content,
           time: getRelativeTime(new Date(msg.created_at).getTime()),
           fromSelf: msg.sender_id == this.userId,
-          msg_type: msg.msg_type || 'text',
+          msg_type: msg.msg_type || "text",
           reply_to: msg.reply_to || null,
         };
       },
 
       sendMessage(forceType, forceContent, forceFileName) {
-        const msgType = forceType || 'text';
+        const msgType = forceType || "text";
         const content = forceContent || this.messageInput.trim();
         if (!content) return;
 
         const timestamp = getRelativeTime(Date.now());
         let msgObj = {
           id: `out-${Date.now()}`,
-          sender: { name: this.username, avatar: this.username.charAt(0).toUpperCase(), avatarUrl: this.ownAvatarUrl },
+          sender: {
+            name: this.username,
+            avatar: this.username.charAt(0).toUpperCase(),
+            avatarUrl: this.ownAvatarUrl,
+          },
           text: content,
           time: timestamp,
           fromSelf: true,
           msg_type: msgType,
-          reply_to: this.replyTarget ? { id: this.replyTarget.id, username: this.replyTarget.sender.name, content: this.replyTarget.text } : null,
+          reply_to: this.replyTarget
+            ? {
+                id: this.replyTarget.id,
+                username: this.replyTarget.sender.name,
+                content: this.replyTarget.text,
+              }
+            : null,
           fileName: forceFileName || null,
         };
 
         const baseData = {
-          text: msgType === 'text' ? content : undefined,
-          url: msgType !== 'text' ? content : undefined,
+          text: msgType === "text" ? content : undefined,
+          url: msgType !== "text" ? content : undefined,
           msgType,
-          replyTo: this.replyTarget ? parseInt(String(this.replyTarget.id).replace(/^(private|group)-/, '')) || null : null,
+          replyTo: this.replyTarget
+            ? parseInt(
+                String(this.replyTarget.id).replace(/^(private|group)-/, ""),
+              ) || null
+            : null,
           fileName: forceFileName || undefined,
         };
 
         if (this.activeChat.type === "global") {
-          const clientId = 'g-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+          const clientId =
+            "g-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10);
           msgObj.id = clientId;
-          socket.emit("global_message", { text: msgType === 'text' ? content : undefined, url: msgType !== 'text' ? content : undefined, msgType, timestamp: Date.now(), replyTo: this.replyTarget ? this.replyTarget.id : null, clientId });
+          socket.emit("global_message", {
+            text: msgType === "text" ? content : undefined,
+            url: msgType !== "text" ? content : undefined,
+            msgType,
+            timestamp: Date.now(),
+            replyTo: this.replyTarget ? this.replyTarget.id : null,
+            clientId,
+          });
           this.globalMessages.push(msgObj);
           if (this.globalMessages.length > 50) this.globalMessages.shift();
         } else {
           if (this.activeChat.type === "private") {
-            socket.emit("private_message", { ...baseData, targetId: this.activeChat.id });
+            socket.emit("private_message", {
+              ...baseData,
+              targetId: this.activeChat.id,
+            });
           } else if (this.activeChat.type === "group") {
-            socket.emit("group_message", { ...baseData, groupId: this.activeChat.id });
+            socket.emit("group_message", {
+              ...baseData,
+              groupId: this.activeChat.id,
+            });
           }
           this.messages.push(msgObj);
         }
@@ -1404,42 +1770,60 @@ main %}
       },
 
       loadMoreMessages() {
-        if (this.loadingMore || !this.hasMoreMessages || this.messages.length === 0) return;
+        if (
+          this.loadingMore ||
+          !this.hasMoreMessages ||
+          this.messages.length === 0
+        )
+          return;
         this.loadingMore = true;
         const oldest = this.messages[0];
-        const oldestId = parseInt(String(oldest.id).replace(/^(private|group)-/, ''));
+        const oldestId = parseInt(
+          String(oldest.id).replace(/^(private|group)-/, ""),
+        );
         let url;
-        if (this.activeChat.type === 'group') {
+        if (this.activeChat.type === "group") {
           url = `/api/group_messages/${this.activeChat.id}?before=${oldestId}`;
-        } else if (this.activeChat.type === 'private') {
+        } else if (this.activeChat.type === "private") {
           url = `/api/private_messages/${this.activeChat.id}?before=${oldestId}`;
         } else {
           this.loadingMore = false;
           return;
         }
-        const prevScrollHeight = this._scrollEl ? this._scrollEl.scrollHeight : 0;
+        const prevScrollHeight = this._scrollEl
+          ? this._scrollEl.scrollHeight
+          : 0;
         fetch(url)
-          .then(r => r.json())
-          .then(data => {
+          .then((r) => r.json())
+          .then((data) => {
             if (data.error) return;
-            const prefix = this.activeChat.type === 'group' ? 'group' : 'private';
-            const older = data.messages.map(msg => this.buildApiMessage(msg, prefix));
+            const prefix =
+              this.activeChat.type === "group" ? "group" : "private";
+            const older = data.messages.map((msg) =>
+              this.buildApiMessage(msg, prefix),
+            );
             this.messages = older.concat(this.messages);
             this.hasMoreMessages = data.has_more === true;
             this.loadingMore = false;
             this.$nextTick(() => {
               if (this._scrollEl) {
-                this._scrollEl.scrollTop = this._scrollEl.scrollHeight - prevScrollHeight;
+                this._scrollEl.scrollTop =
+                  this._scrollEl.scrollHeight - prevScrollHeight;
               }
             });
           })
-          .catch(() => { this.loadingMore = false; });
+          .catch(() => {
+            this.loadingMore = false;
+          });
       },
 
-
       clearHistory() {
-        if (!confirm(`Clear chat history for ${this.contextMenu.item.name}?`)) return;
-        if (this.activeChat.type === this.contextMenu.type && this.activeChat.id === this.contextMenu.item.id) {
+        if (!confirm(`Clear chat history for ${this.contextMenu.item.name}?`))
+          return;
+        if (
+          this.activeChat.type === this.contextMenu.type &&
+          this.activeChat.id === this.contextMenu.item.id
+        ) {
           this.messages = [];
         }
         this.contextMenu.visible = false;
