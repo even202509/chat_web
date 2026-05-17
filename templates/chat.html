@@ -1298,6 +1298,7 @@ main %}
           const key = `g:${item.id}`;
           this.unreadCounts[key] = 0;
           this.unreadCounts = { ...this.unreadCounts };
+          socket.emit("mark_read", { group_id: item.id });
           fetch(`/api/group_messages/${item.id}`)
             .then(r => r.json())
             .then(data => {

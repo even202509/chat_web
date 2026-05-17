@@ -8,7 +8,6 @@ from flask import (
     request,
     redirect,
     url_for,
-    send_from_directory,
 )
 from flask_login import LoginManager, UserMixin, current_user, login_user, logout_user
 from flask_socketio import SocketIO, emit, join_room
@@ -796,6 +795,21 @@ def handle_delete_group_socket(data):
 @authenticated_only
 def handle_mark_read(data):
     user_id = int(current_user.id)
+    group_id = data.get('group_id')
+    if group_id:
+        chat_id = f"group:{group_id}"
+        db.session.execute(text(
+            """
+            UPDATE user_message_status
+            SET is_read = TRUE, read_at = NOW()
+            WHERE user_id = :uid
+              AND is_read = FALSE
+              AND chat_type = 'group'
+              AND chat_id = :chat_id
+            """
+        ), {"uid": user_id, "chat_id": chat_id})
+        db.session.commit()
+        return {"success": True}
     sender_id = data.get('from_id')
     if not sender_id:
         return {"error": "sender_id is required"}
