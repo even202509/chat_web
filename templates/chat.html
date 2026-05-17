@@ -773,6 +773,7 @@ main %}
         transferDialog: { group: null, members: [] },
         imagePreview: null,
         toast: null,
+        _toastTimer: null,
       };
     },
 
@@ -861,6 +862,7 @@ main %}
         const msg = this.buildMessage(data);
         if (this.activeChat.type === "private" && this.activeChat.id == data.from_id) {
           this.messages.push(msg);
+          if (this.messages.length > 200) this.messages.splice(0, this.messages.length - 200);
           this.$nextTick(() => this.scrollToBottom());
         } else {
           this.unreadCounts[data.from_id] = (this.unreadCounts[data.from_id] || 0) + 1;
@@ -871,6 +873,7 @@ main %}
       socket.on("group_message", (data) => {
         const msg = this.buildGroupMessage(data);
         if (this.activeChat.type === "group" && this.activeChat.id == data.group_id) {
+          if (this.messages.length > 200) this.messages.splice(0, this.messages.length - 200);
           this.messages.push(msg);
           this.$nextTick(() => this.scrollToBottom());
         } else if (data.msg_type !== 'system') {
@@ -961,6 +964,11 @@ main %}
         const g = this.groups.find((g) => g.id == data.id);
         if (g) g.members = data.members;
       });
+    },
+
+    beforeUnmount() {
+      if (this._toastTimer) clearTimeout(this._toastTimer);
+      socket.off();
     },
 
     methods: {
@@ -1161,7 +1169,8 @@ main %}
 
       showToast(msg) {
         this.toast = msg;
-        setTimeout(() => { this.toast = null; }, 3000);
+        if (this._toastTimer) clearTimeout(this._toastTimer);
+        this._toastTimer = setTimeout(() => { this.toast = null; this._toastTimer = null; }, 3000);
       },
 
       // === 原有方法 ===

@@ -5,7 +5,14 @@
   >
     <!-- 头像 -->
     <div class="flex flex-col items-center gap-4">
-      <template v-if="user.avatar_url">
+      <template v-if="editing && avatarPreview">
+        <img
+          :src="avatarPreview"
+          class="h-24 w-24 rounded-full object-cover shadow-md ring-2 ring-sky-400"
+          alt="preview"
+        />
+      </template>
+      <template v-else-if="user.avatar_url">
         <img
           :src="user.avatar_url"
           class="h-24 w-24 rounded-full object-cover shadow-md"
@@ -110,7 +117,7 @@
           [[ saving ? 'Saving...' : 'Save' ]]
         </button>
         <button
-          @click="editing = false"
+          @click="cancelEdit"
           class="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition"
         >
           Cancel
@@ -203,40 +210,61 @@
         editing: false,
         editBio: "",
         avatarFile: null,
+        avatarPreview: null,
+        socket: null,
         saving: false,
         addingFriend: false,
+        _addFriendTimer: null,
       };
     },
     mounted() {
-      const socket = io();
-      socket.on("friend_accept", (data) => {
+      this.socket = io();
+      this.socket.on("friend_accept", (data) => {
         if (data.userId == this.currentId && this.user.id == data.userId) {
           this.isFriend = true;
           this.friendStatus = "none";
         }
       });
-      socket.on("friend_reject", (data) => {
+      this.socket.on("friend_reject", (data) => {
         if (data.userId == this.currentId) {
           this.friendStatus = "none";
         }
       });
-      socket.on("friend_remove", (data) => {
+      this.socket.on("friend_remove", (data) => {
         if (data.userId == this.currentId) {
           this.isFriend = false;
           this.friendStatus = "none";
         }
       });
-      socket.on("user_online", () => this.isOnline = true);
-      socket.on("user_offline", () => this.isOnline = false);
+      this.socket.on("user_online", () => this.isOnline = true);
+      this.socket.on("user_offline", () => this.isOnline = false);
+    },
+    beforeUnmount() {
+      if (this.socket) {
+        this.socket.off();
+        this.socket.disconnect();
+        this.socket = null;
+      }
+      if (this._addFriendTimer) clearTimeout(this._addFriendTimer);
+      if (this.avatarPreview) URL.revokeObjectURL(this.avatarPreview);
+      if (this.user.avatar_url && this.user.avatar_url.startsWith('blob:')) URL.revokeObjectURL(this.user.avatar_url);
     },
     methods: {
       startEdit() {
         this.editBio = this.user.bio || "";
+        if (this.avatarPreview) { URL.revokeObjectURL(this.avatarPreview); this.avatarPreview = null; }
         this.avatarFile = null;
         this.editing = true;
       },
+      cancelEdit() {
+        if (this.avatarPreview) { URL.revokeObjectURL(this.avatarPreview); this.avatarPreview = null; }
+        this.avatarFile = null;
+        this.editing = false;
+      },
       onAvatarPicked(e) {
+        if (this.avatarPreview) URL.revokeObjectURL(this.avatarPreview);
         this.avatarFile = e.target.files[0] || null;
+        this.avatarPreview = this.avatarFile ? URL.createObjectURL(this.avatarFile) : null;
       },
       async saveProfile() {
         this.saving = true;
@@ -249,6 +277,10 @@
           if (data.success) {
             this.user.bio = this.editBio;
             if (this.avatarFile) {
+              if (this.avatarPreview) URL.revokeObjectURL(this.avatarPreview);
+              if (this.user.avatar_url && this.user.avatar_url.startsWith('blob:')) {
+                URL.revokeObjectURL(this.user.avatar_url);
+              }
               this.user.avatar_url = URL.createObjectURL(this.avatarFile);
             }
             this.editing = false;
@@ -260,13 +292,14 @@
       },
       addFriend() {
         this.addingFriend = true;
-        const socket = io();
-        socket.emit("friend_add", { from: this.user.id });
-        socket.on("friend_add", () => {
+        if (this._addFriendTimer) { clearTimeout(this._addFriendTimer); this._addFriendTimer = null; }
+        if (!this.socket) this.socket = io();
+        this.socket.emit("friend_add", { from: this.user.id });
+        this.socket.on("friend_add", () => {
           this.friendStatus = "sent";
           this.addingFriend = false;
         });
-        setTimeout(() => {
+        this._addFriendTimer = setTimeout(() => {
           this.friendStatus = "sent";
           this.addingFriend = false;
         }, 500);
