@@ -171,7 +171,7 @@ main %}
     >
       <span
         class="inline-flex h-10 w-10 items-center justify-center rounded-3xl bg-slate-100 text-slate-700"
-        ><img src="/static/favicon.svg" height="40" width="40" /></span>
+        ><img src="/static/favicon.svg" height="40" width="40" class="rounded-full"/></span>
       Global Chat
     </button>
   </aside>
@@ -203,7 +203,7 @@ main %}
             v-if="activeChat.type === 'group'"
             type="button"
             @click="toggleGroupMembers"
-            class="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600 hover:bg-slate-200"
+            class="rounded-full bg-blue-50 px-3 py-1 text-sm text-blue-600 font-bold hover:bg-blue-100"
           >
             Members
           </button>
