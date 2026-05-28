@@ -19,7 +19,6 @@ from flask_socketio import SocketIO, emit, join_room
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
 from werkzeug.security import check_password_hash, generate_password_hash
-from werkzeug.utils import secure_filename
 
 from tools import (
     login_required,
@@ -329,7 +328,7 @@ def api_profile_update():
     ), {"bio": bio, "uid": user_id})
 
     file = request.files.get('avatar')
-    if file and file.filename:
+    if file:
         valid_file, safe_name, file_error = validate_upload_file(file, allowed_extensions=ALLOWED_AVATAR_EXTENSIONS)
         if not valid_file:
             return {"success": False, "error": file_error}, 400

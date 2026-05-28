@@ -6,7 +6,6 @@ from flask import redirect, url_for, request, jsonify
 from flask_login import current_user
 from flask_socketio import disconnect
 from PIL import Image, UnidentifiedImageError
-from werkzeug.utils import secure_filename
 
 USERNAME_PATTERN = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{2,31}$')
 PASSWORD_PATTERN = re.compile(r'^[\x21-\x7E]{6,128}$')
@@ -20,6 +19,14 @@ IMAGE_MAGIC_HEADERS = {
     'jpeg': [b'\xff\xd8\xff'],
     'gif': [b'GIF87a', b'GIF89a'],
     'webp': [b'RIFF'],
+}
+
+MIME_TYPE_TO_EXTENSION = {
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+    'image/gif': 'gif',
+    'image/webp': 'webp',
 }
 
 
@@ -48,10 +55,6 @@ def validate_bio(bio):
     if len(clean_bio) > BIO_MAX_LENGTH:
         return False, f'Bio must be at most {BIO_MAX_LENGTH} characters', None
     return True, None, clean_bio
-
-
-def allowed_file(filename, allowed_extensions):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions
 
 
 def get_image_extension(filename):
@@ -119,14 +122,16 @@ def normalize_image_file(file, filename):
 def validate_upload_file(file, allowed_extensions=None):
     if file is None:
         return False, None, 'No file provided'
-    if not getattr(file, 'filename', None):
-        return False, None, 'Empty filename'
-    safe_name = secure_filename(file.filename)
+
     if allowed_extensions is None:
         allowed_extensions = ALLOWED_FILE_UPLOAD_EXTENSIONS
-    if not allowed_file(safe_name, allowed_extensions):
-        return False, None, 'File type not allowed'
-    return True, safe_name, None
+
+    mime_type = getattr(file, 'mimetype', None) or getattr(file, 'content_type', None)
+    fallback_ext = MIME_TYPE_TO_EXTENSION.get((mime_type or '').lower())
+    if fallback_ext and fallback_ext in allowed_extensions:
+        return True, f'upload.{fallback_ext}', None
+
+    return False, None, 'File type not allowed'
 
 
 def socket_error(message, code=None, details=None):

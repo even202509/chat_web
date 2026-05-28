@@ -5,3 +5,6 @@ __pycache__/
 *.log
 .vscode/
 .deepseek/
+*.jpg
+*.jpeg
+*.png
