@@ -1,5 +1,6 @@
 # Vibe Chat
-
+#### Video Demo:  https://youtu.be/OV26dBNKZ8s?si=OqM94Pug_6bIImZJ
+#### Description
 
 English README — A simple Flask + Vue + Socket.IO real-time chat example.
 
