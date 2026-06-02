@@ -1,6 +1,6 @@
 # Vibe Chat
 
-简体中文说明文档 — 基于 Flask + Socket.IO 的实时聊天应用样例。
+简体中文说明文档 — 基于 Flask + Vue + Socket.IO 的实时聊天应用样例。
 
 **项目简介**
 

@@ -1,6 +1,7 @@
 # Vibe Chat
 
-English README — A simple Flask + Socket.IO real-time chat example.
+
+English README — A simple Flask + Vue + Socket.IO real-time chat example.
 
 Project Overview
 
